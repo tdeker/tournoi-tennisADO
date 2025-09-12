@@ -3,7 +3,8 @@
 #import random
 #from collections import defaultdict
 #import math
-from Claude import *
+from poule import *
+from joueur import *
 from collections import Counter,defaultdict
 import math
 import pandas as pd
@@ -11,22 +12,7 @@ import pandas as pd
 import random
 from typing import List, Dict, Tuple
 
-
-class Player:
-    def __init__(self, name: str, age: int, level: int, seededPlayer: bool):
-
-        self.level = level
-        self.first_name = name.split()[0] if len(name.split()) > 0 else ""
-        self.last_name = name.split()[-1] if len(name.split()) > 1 else name
-        self.seeded_player = seededPlayer
-        self.age = age
-    
-    def __str__(self):
-        return f"{self.name} (Niveau {self.level})"
-    
-    def __repr__(self):
-        return self.__str__()
-
+# code de tristan incomplet et à remplacer par la class RepartiteurPoulesFixes dans la librairie Claude.py
 class RoundRobin:
     def __init__(self, poolConfig :pd.DataFrame) -> None:
             self.myPossiblePools = poolConfig
@@ -259,6 +245,16 @@ class PoolConfigurationGenerator:
 # class TournamentGenerator:
 if __name__ == "__main__":
     print("debut")
-    myPossiblePools = PoolConfigurationGenerator()
-    myPossiblePools.displayPoolConfigurations()
+    #myPossiblePools = PoolConfigurationGenerator()
+    #myPossiblePools.displayPoolConfigurations()
+    joueurs = creation_joueurs(16, 4)
+    for joueur in joueurs:
+        print(joueur.prenom + " " + joueur.nom + "-" + str(joueur.niveau) + "-" + str(joueur.age) + "-" + str(joueur.tete_de_serie))
+    print("fin")
+    # tester la génération de poules imposées
+    tailles_poules = [4, 5, 3, 4]
+    repartiteur = RepartiteurPoulesFixes(joueurs, tailles_poules)
+    poules = repartiteur.repartir_par_backtracking()
+    for poule in poules:
+        print(poule)
     print("fin")
