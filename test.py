@@ -8,7 +8,7 @@ import itertools
 
 if __name__ == "__main__":
     print("debut")
-    joueurs = creation_joueurs(16, 0)
+    joueurs = creation_joueurs_avec_nom_famille(16, 0)
     for joueur in joueurs:
         print(joueur.prenom + " " + joueur.nom + "-" + str(joueur.niveau) + "-" + str(joueur.age) + "-" + str(joueur.tete_de_serie))
     print(f"Nombre total de joueurs: {len(joueurs)}")
@@ -20,10 +20,19 @@ if __name__ == "__main__":
     # Tailles de poules fixes : 4, 5, 3, 4 (total = 16)
     tailles_poules = [4, 5, 3, 4]
     print(f"\nTailles de poules imposées: {tailles_poules}")
-    
+ 
+
     # Répartition avec backtracking
     repartiteur = RepartiteurPoulesFixes(joueurs, tailles_poules)
-    print("\n🔍 Tentative par backtracking...")
+    print("\n🔍 Tentative par la fonction de Tristan...")
+       # Réoartition par calcul de coût par Tristan
+    repartiteur.repartir_par_couts_TK(joueurs)
+    print("✅ Solution trouvée par TK!")
+    repartiteur.afficher_resultats()
+    exit() 
+
+
+    repartiteur.reset_poule()
     poules = repartiteur.repartir_par_backtracking()
     
     if poules:
@@ -38,8 +47,12 @@ if __name__ == "__main__":
             repartiteur.afficher_resultats()
         else:
             print("❌ Aucune solution trouvée. Les contraintes sont trop restrictives.")
-            quit()
+           # quit()
+
+      # test de la répartition TH ie Fllaback
     
+   # repartiteur.reset_poule()
+
     # Vérification des contraintes
     print(f"\n=== VÉRIFICATION DES CONTRAINTES ===")
     contraintes_ok = True
