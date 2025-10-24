@@ -1,5 +1,5 @@
 from collections import defaultdict, Counter
-from posix import CLD_CONTINUED
+#from posix import CLD_CONTINUED
 from joueur import *
 import random
 from faker import Faker
@@ -247,7 +247,7 @@ class PoolConfigurationGenerator:
 class RepartiteurPoulesFixes:
     def __init__(self, joueurs: List[Joueur], tailles_poules: List[int]):
         self.joueurs = joueurs
-        self.tailles_poules = sorted(tailles_poules)
+        self.tailles_poules = sorted(tailles_poules, reverse=True)
         self.nb_poules = len(tailles_poules)
         self.poules = [[] for _ in range(self.nb_poules)]
         self.poids_niveau = 10      # Contrainte la plus importante
@@ -380,6 +380,7 @@ class RepartiteurPoulesFixes:
                 self.poules[i].append(joueur)
             else:
                 # Impossible d'assigner ce joueur
+                print(f"je ne peux pas assigner le joueur {joueur.prenom} {joueur.nom} à une poule")
                 return False
         
         # Vérifier que tous les joueurs ont été assignés
