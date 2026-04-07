@@ -1,35 +1,51 @@
 from poule import *
+from itertools import zip_longest
 import math
 
 if __name__ == "__main__":
-    print("debut")
     nbInscris=27
     nbSeed=4
-    myPossiblePools = PoolConfigurationGenerator()
-    myPossiblePools.displayPoolFullConfigurations()
-    print(myPossiblePools.get_pool_sizes_list(nbInscris))
-    mes_joueurs = creation_joueurs(nbInscris, nbSeed)
-    for joueur in mes_joueurs:
-        print(joueur.prenom + " " + joueur.nom + "-" + str(joueur.niveau) + "-" + str(joueur.age) + "-" + str(joueur.tete_de_serie))
-    # tester la génération de poules imposées
-    tailles_poules = myPossiblePools.get_pool_sizes_list(nbInscris)
-    ma_configuration_poule = myPossiblePools.plan_for_N_with_caps(nbInscris)
-    print(f"le nombre de gagnant par poule:{ma_configuration_poule['Gagnants par poule (format 221)']}") 
-    # ajouter une méthode qui calcul le nombre de gagant par poule 
-    ## Simulation des gagnants de la poule et de la consolante
-    joueurs_tete_de_serie = [j for j in mes_joueurs if j.tete_de_serie]
-    joueurs_standard = [j for j in mes_joueurs if not j.tete_de_serie]
-    print(f"joueurs non tête de série{joueurs_standard}")
-    print(f"joueurs têtes de série : {joueurs_tete_de_serie}")
-    # mettre dans les poules uniquement les joueurs non tetes de série lesquels intégrent directement le tournoi principal
-    repartiteur = RepartiteurPoulesFixes( joueurs_standard, tailles_poules)
-   # mes_poules = repartiteur.repartir_par_backtracking()
-    #mes_poules = repartiteur.repartir_par_recherche_locale()
-    repartiteur.repartir_par_couts_TK(joueurs_standard)
-    mes_poules = repartiteur.poules
+    print("debut")
+    maListeDeJoueurs = creation_joueurs_avec_nom_famille(nbInscris,nbSeed) 
+    for joueur in maListeDeJoueurs:
+     print(joueur.prenom + " " + joueur.nom + "-" + str(joueur.niveau) + "-" + str(joueur.age) + "-" + str(joueur.tete_de_serie))  
+    mesPoules = PoolConfigurationGeneratorByTristan(nbInscris,1)
+    print(f'nombre de gagnant par poule:{mesPoules.get_winners_per_pool()}')
+    print(mesPoules.get_pool_sizes_list())
+    mesMatchsDePoules = RepartiteurPoulesFixes(maListeDeJoueurs, mesPoules.get_pool_sizes_list())
+    mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurs)
+    mesMatchsDePoules.afficher_resultats()
+    exit()
    
-    for i,poule in enumerate(mes_poules, start=1):
-        print(f'Poule {i}: {poule}')
+       # On récupère la liste des listes de joueurs
+    liste_de_poules = mesMatchsDePoules.poules 
+  
+
+    # Paramètres d'affichage
+    NB_POULES = len(liste_de_poules)
+    LARGEUR_COLONNE = 35  # Ajustez selon la longueur des noms composés
+
+    # 1. Affichage des en-têtes (Poule 1, Poule 2...)
+    header = "".join([f"Poule {i+1}".ljust(LARGEUR_COLONNE) for i in range(NB_POULES)])
+    print(header)
+    print("-" * (LARGEUR_COLONNE * NB_POULES))
+
+    # 2. Affichage des joueurs ligne par ligne
+    # zip_longest va grouper le 1er joueur de chaque poule, puis le 2ème, etc.
+    for une_poule in zip_longest(*[p.getJoueurs() for p in liste_de_poules], fillvalue=None):
+        ligne_texte = ""
+        for joueur in une_poule.getJoueurs():
+            if joueur is not None:
+                # Ici on utilise le formatage de votre __repr__
+                texte_joueur = str(joueur)
+            else:
+                texte_joueur = ""
+            
+            ligne_texte += texte_joueur.ljust(LARGEUR_COLONNE)
+        
+        print(ligne_texte)
+
+    exit()
 
 
 ## selectionner les gagnants au hasard pour chaque poule

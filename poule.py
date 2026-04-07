@@ -12,16 +12,185 @@ import joueur
 
 # prévoir de faire un objet Poule comme étant une liste de liste de joueurs
 class Poule:
-    def __init__(self) -> None:
-        self.nb_joueur = 0
+    def __init__(self, nb_joueur: int) -> None:
+        self.nb_joueurs = nb_joueur
         self.nb_gagnant = 0  
-class PoolConfigurationGenerator:
+        self.nb_console=0
+        self.name=""
+        self.lieu=""
+        self.joueurs: List[Joueur] = []
+
+    def nbJoueursPoule(self) -> int:
+        return len(self.joueurs)
+    def taillePoule(self) -> int:
+        return self.nb_joueurs
+    def nbGagnantsPoule(self) -> int:
+        return self.nb_gagnant
+
+    def nomPoule(self) -> str:
+        return self.name
+
+    def lieuPoule(self) -> str:
+        return self.lieu
+
+    def definirNomPoule(self, nom: str) -> None:
+        self.name = nom.strip()
+
+    def definirLieuPoule(self, lieu: str) -> None:
+        self.lieu = lieu.strip()
+
+    def definirNbConsole(self, nb_console: int) -> None:
+        if nb_console < 0:
+            raise ValueError("Le nombre de consoles ne peut pas être négatif")
+        self.nb_console = nb_console
+
+    def definirNbGagnantsPoule(self, nb_gagnant: int) -> None:
+        if nb_gagnant < 0:
+            raise ValueError("Le nombre de gagnants ne peut pas être négatif")
+        if nb_gagnant > self.nb_joueurs:
+            raise ValueError("Le nombre de gagnants ne peut pas dépasser la taille de la poule")
+        self.nb_gagnant = nb_gagnant
+
+    def ajouterJoueur(self, joueur: Joueur) -> bool:
+        if self.estComplete():
+            return False
+        self.joueurs.append(joueur)
+        return True
+
+    def retirerJoueur(self, joueur: Joueur) -> bool:
+        if joueur not in self.joueurs:
+            return False
+        self.joueurs.remove(joueur)
+        return True
+
+    def getJoueurs(self) -> List[Joueur]:
+        return list(self.joueurs)
+
+    def nbJoueursInscrits(self) -> int:
+        return len(self.joueurs)
+
+    def placesRestantes(self) -> int:
+        return self.nb_joueurs - len(self.joueurs)
+
+    def estComplete(self) -> bool:
+        return len(self.joueurs) >= self.nb_joueurs
+
+    def resetJoueurs(self) -> None:
+        self.joueurs.clear()
+
+    def __repr__(self) -> str:
+        return (
+            f"Poule(nom='{self.name}', taille={self.nb_joueurs}, "
+            f"inscrits={len(self.joueurs)}, gagnants={self.nb_gagnant})"
+        )
+   
+class PoolConfigurationGeneratorByTristan:
+    def __init__(self, nb_joueur: int, nb_console: int = 1):
+        self.nb_joueurs = nb_joueur
+        self.nb_console=nb_console
+        self.nb_joueur_poules = self.nb_joueurs - self.nb_console
+        self.poules = self.__creation_poules_vides() #création de la liste de poule vide
+    def nb_poule(self) -> int:  
+        if self.nb_joueurs < 1:
+            raise ValueError("n doit être >= 1")    
+        return len(self.poules)
+    def nb_gagnant(self) -> int: #attention il faut au moins 1 gagnant par poule, donc le nombre de gagnant doit être supérieur aux nombres de poules
+        if self.nb_joueurs < 1:
+          raise ValueError("n doit être >= 1")
+        return 1 << (self.nb_joueurs.bit_length() - 1)  # équivalent à 2**floor(log2(n))
+    def matches_in_pool(self, n):
+        return n * (n - 1) // 2
+    def display_poules(self) -> None:
+        for i,poule in enumerate(self.poules, start=1):
+            print(f'Poule {i}: {poule.nbJoueursPoule()} joueurs')
+    def __creation_poules_vides(self) -> List[Poule]:
+        """
+        Retourne (a, b) maximisant a tel que n = 4a + 5b, a,b entiers >= 0.
+        Renvoie None s'il n'y a pas de solution.
+        a est le nombre de poules de 4 joueurs et b est le nombre de poules de 5 joueurs
+        le seule cas qui ne fonctionne pas est le nombre de joueurs = 11, c'est le nombre de 
+        """
+        n=self.nb_joueurs
+        if n==11:
+             # pas de solution (ex: n = 11) * proposer une solution avec des poules de 3 joueurs
+            a=2
+            b=0
+            c=1
+        else :
+            b = n % 4              # plus petit b compatible (b ≡ n mod 4)
+            a_num = n - 5 * b
+            a = a_num // 4
+            c=0
+ 
+        #création de la liste des poules possibles
+        liste_poules = []
+        for i in range(a):
+            p=Poule(4)
+            liste_poules.append(p)
+        for i in range(b):
+            p=Poule(5)
+            liste_poules.append(p)
+        for i in range(c):
+            p=Poule(3)
+            liste_poules.append(p)
+        return liste_poules
+
+        return None
+    def get_pool_sizes_list (self) -> List[int]:
+        """
+        Retourne la liste des tailles de toutes les poules pour le nombre de joueurs inscrits.
+        """
+        myPools =self.__creation_poules_vides()
+        return [p.taillePoule() for p in myPools]
+
+    def get_winners_per_pool(self) -> List[int]:
+        """
+        Distribue les places en priorité absolue aux plus grandes poules.
+        Ordre de priorité : Poules de 5 > Poules de 4 > Poules de 3.
+        """
+        total_poules = self.nb_poule()
+        if total_poules == 0:
+            return []
+
+        # 1. Calcul de la cible (ex: 16 qualifiés)
+        # Assurez-vous que cette méthode existe et renvoie bien une puissance de 2
+        cible_qualifies = self.nb_gagnant()
+        
+        # 2. Distribution de base
+        nb_base = cible_qualifies // total_poules
+        reste = cible_qualifies % total_poules
+        
+        # 3. Initialisation de la liste des résultats avec la base
+        # On crée une liste de résultats alignée sur l'ordre actuel de self.poules
+        resultats = [nb_base] * total_poules
+
+        # 4. TRI DE PRIORITÉ
+        # On récupère les indices des poules, mais on les trie par la taille de la poule associée
+        # reverse=True permet d'avoir les 5 en premier, puis les 4, puis les 3
+        indices_prioritaires = sorted(
+            range(total_poules), 
+            key=lambda i: self.poules[i].nbJoueursPoule(), 
+            reverse=True
+        )
+        
+        # 5. Distribution du reste (les points bonus)
+        # On parcourt les indices dans l'ordre de priorité (les plus grandes poules d'abord)
+        for i in range(reste):
+            idx = indices_prioritaires[i]
+            resultats[idx] += 1
+            
+        # 6. Mise à jour interne des objets
+        for i, nb in enumerate(resultats):
+            self.poules[i].nb_gagnant = nb
+            
+        return resultats
+class PoolConfigurationGenerator: # cette classe est deprecated - A supprimer
     # Recompute a plan (N=15..40) that MINIMIZES matches (priorité poules de 3),
     # while enforcing PER-POULE constraint: winners_i <= size_i - 1
     # i.e., au moins 1 éliminé dans chaque poule (aucune poule "tout le monde passe").
     #
     # Constraints:
-    # - Poules de 3..5 joueurs
+    # - Poules de 3..5 joueurs -> à changer pour des poules de 4, 5 et 6 en privilégiant les poules de 4 et 5
     # - P <= joueurs à éliminer  (au moins 1 perdant globalement)
     # - P <= Q                  (au moins 1 qualifié par poule)
     # - NEW: Somme max des qualifiés possible = sum(size_i - 1) >= Q
@@ -215,7 +384,7 @@ class PoolConfigurationGenerator:
             
         Returns:
             Liste des tailles de poules. Par exemple :
-            - Si configuration = "1×3, 2×4, 3×5 joueurs" → [3, 4, 4, 5, 5, 5]
+            - Si configuration = "1×3, 2×4, 3×5 joueurs" → [3, 4, 4, 5, 5, 5]æ
             - Si aucune configuration faisable → []
             
         Example:
@@ -249,26 +418,26 @@ class RepartiteurPoulesFixes:
         self.joueurs = joueurs
         self.tailles_poules = sorted(tailles_poules, reverse=True)
         self.nb_poules = len(tailles_poules)
-        self.poules = [[] for _ in range(self.nb_poules)]
+        self.poules =[Poule(taille) for taille in self.tailles_poules]
         self.poids_niveau = 10      # Contrainte la plus importante
         self.poids_familial = 5     # Contrainte importante  
         self.poids_age = 1          # Contrainte d'équilibrage
         # Vérification préalable
         if sum(tailles_poules) != len(joueurs):
             raise ValueError(f"Incompatibilité: {len(joueurs)} joueurs pour {sum(tailles_poules)} places")
-        
-    def est_poule_valide(self, poule: List[Joueur]) -> bool:
+
+    def est_poule_valide(self, poule: Poule) -> bool:
         """Vérifie si une poule respecte toutes les contraintes"""
         if not poule:
             return True
             
         # Contrainte de niveau
-        niveaux = [j.niveau for j in poule]
+        niveaux = [j.niveau for j in poule.getJoueurs()]
         if max(niveaux) - min(niveaux) > 1:
             return False
             
         # Contrainte familiale
-        familles = [j.nom for j in poule]
+        familles = [j.nom for j in poule.getJoueurs()]
         if len(familles) != len(set(familles)):
             return False
             
@@ -276,25 +445,25 @@ class RepartiteurPoulesFixes:
 
     ## DEBUT séquence de méthode pour calculer la répartition avec l'algorithme de Tristan   
             
-    def age_moyen_poule(self, ma_poule: List[Joueur]) -> float:
+    def age_moyen_poule(self, ma_poule: Poule) -> float:
         """Calcule l'âge moyen d'une poule"""
         if not ma_poule:
             return 100  # ou une valeur par défaut appropriée
         else:
-            somme = sum(j.age for j in ma_poule)
-            return somme / len(ma_poule)
+            somme = sum(j.age for j in ma_poule.getJoueurs())
+            return somme / ma_poule.nb_joueurs()
 
     def niveau_max_poule(self, ma_poule: List[Joueur]) -> int:
         """Trouve le niveau maximum dans une poule"""
         if not ma_poule:
             return 5  # renvoie le niveau maximum possible
         else:
-            niveau_max = ma_poule[0].niveau
-            for mon_joueur in ma_poule:
+            niveau_max = ma_poule.getJoueurs()[0].niveau
+            for mon_joueur in ma_poule.getJoueurs():
                 if mon_joueur.niveau > niveau_max:
                     niveau_max = mon_joueur.niveau
             return niveau_max
-    def calculer_cout_pour_un_joueur_par_pool(self, joueur: Joueur, poule: list[Joueur]) -> float:
+    def calculer_cout_pour_un_joueur_par_pool(self, joueur: Joueur, ma_poule: Poule) -> float:
         """
         Calcule le coût d'assignation avec priorisation des contraintes.
         Plus le coût est faible, meilleure est l'assignation.
@@ -302,8 +471,8 @@ class RepartiteurPoulesFixes:
         cout_total = 0
        
         # 1. COÛT NIVEAU (priorité maximale)
-        if poule:
-            niveaux_actuels = [j.niveau for j in poule]
+        if ma_poule.nbJoueursPoule() > 0:
+            niveaux_actuels = [j.niveau for j in ma_poule.getJoueurs()]
             niveau_min_actuel = min(niveaux_actuels)
             niveau_max_actuel = max(niveaux_actuels)
             
@@ -317,28 +486,18 @@ class RepartiteurPoulesFixes:
                 cout_total += self.poids_niveau * (ecart_niveau - 1) ** 2
         
             # 2. COÛT FAMILIAL (priorité élevée)
-            noms_actuels = [j.nom for j in poule]
+            noms_actuels = [j.nom for j in ma_poule.getJoueurs()]
             if joueur.nom in noms_actuels:
                 cout_total += self.poids_familial
             
             # 3. COÛT ÂGE (équilibrage)
-            ages_actuels = [j.age for j in poule]
+            ages_actuels = [j.age for j in ma_poule.getJoueurs()]
             age_moyen_actuel = sum(ages_actuels) / len(ages_actuels)
             ecart_age = abs(joueur.age - age_moyen_actuel)
             cout_total += self.poids_age * ecart_age
             return cout_total
         else :
-            return 100
-
-    #deprecated
-    #def trouver_poule_pour_un_joueur(self, ma_poule: List[Joueur], mon_joueur: Joueur) -> int:
-        """Calcule le coût d'assignation d'un joueur à une poule"""
-        #ajouter le cout de la famille
-
-        #age_diff = abs(self.age_moyen_poule(ma_poule) - mon_joueur.age)
-        #niveau_diff = abs(self.niveau_max_poule(ma_poule) - mon_joueur.niveau)
-        #return age_diff + 10 * niveau_diff
-
+            return 15
     def trouver_poule_pour_un_joueur(self, mon_joueur: Joueur) -> Optional[int]:
         """Trouve la poule avec le coût le plus faible pour un joueur"""
         if not self.poules:
@@ -347,13 +506,14 @@ class RepartiteurPoulesFixes:
         couts = []
         indices_valides = []
         
-        for i, ma_poule in enumerate(self.poules):
+        for i, ma_poule_actuelle in enumerate(self.poules):
             # Si la poule est pleine, on passe
-            if len(self.poules[i]) >= self.tailles_poules[i]:
+            if ma_poule_actuelle.nbJoueursPoule() >= self.tailles_poules[i]:
                 continue
             
             #cout = self.cout_poule_pour_un_joueur(ma_poule, mon_joueur)
-            cout = self.calculer_cout_pour_un_joueur_par_pool(mon_joueur, ma_poule)
+            cout = self.calculer_cout_pour_un_joueur_par_pool(mon_joueur, ma_poule_actuelle)
+            #print(cout)
             couts.append(cout)
             indices_valides.append(i)
         
@@ -377,264 +537,29 @@ class RepartiteurPoulesFixes:
         for joueur in joueurs_tries:
             i = self.trouver_poule_pour_un_joueur(joueur)
             if i is not None:
-                self.poules[i].append(joueur)
+                self.poules[i].ajouterJoueur(joueur)    
             else:
                 # Impossible d'assigner ce joueur
                 print(f"je ne peux pas assigner le joueur {joueur.prenom} {joueur.nom} à une poule")
                 return False
         
         # Vérifier que tous les joueurs ont été assignés
-        total_joueurs_assignes = sum(len(poule) for poule in self.poules)
+        total_joueurs_assignes = sum(poule.nbJoueursPoule() for poule in self.poules)
         return total_joueurs_assignes == len(joueurs)
 
     ## FIN séquence de méthode pour calculer la répartition avec l'algorithme de Tristan    
 
-    def peut_ajouter_joueur(self, joueur: Joueur, poule_idx: int) -> bool:
-        """Vérifie si un joueur peut être ajouté à une poule donnée"""
-        # Vérifier si la poule est pleine
-        if len(self.poules[poule_idx]) >= self.tailles_poules[poule_idx]:
-            return False
-
-        # Tester la validité avec ce joueur ajouté
-        poule_test = self.poules[poule_idx] + [joueur]
-        return self.est_poule_valide(poule_test)
-        
-    def calculer_score_assignation(self, assignation: List[List[Joueur]]) -> float:
-        """Calcule la qualité d'une assignation complète"""
-        score_total = 0
-        
-        for poule in assignation:
-            if not poule:
-                continue
-                
-            niveaux = [j.niveau for j in poule]
-            
-            # Écart de niveau (à minimiser)
-            ecart = max(niveaux) - min(niveaux)
-            score_total += ecart
-            
-            # Variance des niveaux (à minimiser pour plus d'homogénéité)
-            if len(niveaux) > 1:
-                moyenne = sum(niveaux) / len(niveaux)
-                variance = sum((n - moyenne)**2 for n in niveaux) / len(niveaux)
-                score_total += variance * 0.1
-        
-        return score_total
-        
-    def repartir_par_backtracking(self) -> Optional[List[List[Joueur]]]:
-        """Algorithme principal: backtracking avec optimisation"""
-        
-        # 1. Analyser les contraintes pour détecter l'impossibilité précoce
-        if not self.verifier_faisabilite():
-            return None
-        
-        # 2. Trier les joueurs par ordre de difficulté de placement
-        joueurs_tries = self.trier_joueurs_par_difficulte()
-        
-        # 3. Backtracking avec élagage
-        meilleure_solution = self.backtrack(joueurs_tries, 0)
-        
-        if meilleure_solution:
-            self.poules = meilleure_solution
-            return self.poules
-        return None
-
-    def verifier_faisabilite(self) -> bool:
-        """Vérifications préliminaires de faisabilité"""
-        
-        # Vérifier les contraintes familiales
-        familles = defaultdict(list)
-        for joueur in self.joueurs:
-            familles[joueur.nom].append(joueur)
-        
-        # Une famille ne peut pas avoir plus de membres que de poules
-        for nom_famille, membres in familles.items():
-            if len(membres) > self.nb_poules:
-                print(f"❌ Impossible: Famille {nom_famille} a {len(membres)} membres pour {self.nb_poules} poules")
-                return False
-        
-        # Vérifier la distribution des niveaux
-        niveaux = Counter(j.niveau for j in self.joueurs)
-        
-        # Pour chaque niveau, vérifier qu'il peut être réparti
-        for niveau, count in niveaux.items():
-            # Calculer combien de places sont disponibles pour ce niveau
-            places_compatibles = 0
-            for taille in self.tailles_poules:
-                # Dans le pire cas, une poule pourrait être remplie avec ce niveau ± 1
-                places_compatibles += taille
-            
-            if count > places_compatibles:
-                print(f"❌ Impossible: {count} joueurs niveau {niveau} pour {places_compatibles} places compatibles max")
-                return False
-        
-        return True
-        
-    def trier_joueurs_par_difficulte(self) -> List[Joueur]:
-        """Trie les joueurs par ordre de difficulté de placement"""
-        
-        # Compter les membres par famille
-        familles = defaultdict(list)
-        for joueur in self.joueurs:
-            familles[joueur.nom].append(joueur)
-        
-        def calculer_difficulte(joueur):
-            score_difficulte = 0
-            
-            # Plus une famille est nombreuse, plus c'est difficile
-            taille_famille = len(familles[joueur.nom])
-            score_difficulte += taille_famille * 10
-            
-            # Les niveaux extrêmes sont plus difficiles à placer
-            if joueur.niveau == 1 or joueur.niveau == 5:
-                score_difficulte += 5
-            
-            # Ajouter un peu d'aléatoire pour éviter les biais
-            score_difficulte += random.random()
-            
-            return score_difficulte
-        
-        return sorted(self.joueurs, key=calculer_difficulte, reverse=True)
-        
-    def backtrack(self, joueurs: List[Joueur], index: int) -> Optional[List[List[Joueur]]]:
-        """Algorithme de backtracking récursif"""
-        
-        # Cas de base: tous les joueurs sont placés
-        if index >= len(joueurs):
-            # Vérifier que toutes les poules ont la bonne taille
-            for i, taille_requise in enumerate(self.tailles_poules):
-                if len(self.poules[i]) != taille_requise:
-                    return None
-            
-            # Retourner une copie de la solution
-            return [poule[:] for poule in self.poules]
-        
-        joueur_actuel = joueurs[index]
-        
-        # Essayer de placer le joueur dans chaque poule
-        for i in range(self.nb_poules):
-            if self.peut_ajouter_joueur(joueur_actuel, i):
-                # Placer le joueur
-                self.poules[i].append(joueur_actuel)
-                
-                # Appel récursif
-                solution = self.backtrack(joueurs, index + 1)
-                if solution:
-                    return solution
-                
-                # Backtrack: retirer le joueur
-                self.poules[i].remove(joueur_actuel)
-        
-        # Aucune solution trouvée à ce niveau
-        return None
-        
-    def repartir_par_recherche_locale(self) -> Optional[List[List[Joueur]]]:
-        """Alternative: recherche locale avec redémarrages"""
-        
-        meilleure_solution = None
-        meilleur_score = float('inf')
-        
-        # Essayer plusieurs configurations initiales
-        for tentative in range(50):  # 50 tentatives maximum
-            
-            # Générer une solution initiale aléaoire (potentiellement invalide)
-            self.generer_solution_initiale()
-            
-            # Améliorer par recherche locale
-            solution_amelioree = self.ameliorer_solution_locale()
-            
-            if solution_amelioree:
-                score = self.calculer_score_assignation(solution_amelioree)
-                if score < meilleur_score:
-                    meilleur_score = score
-                    meilleure_solution = solution_amelioree
-        
-        if meilleure_solution:
-            self.poules = meilleure_solution
-            return self.poules
-        
-        return None
-        
-    def generer_solution_initiale(self):
-        """Génère une solution initiale en respectant les tailles"""
-        self.poules = [[] for _ in range(self.nb_poules)]
-        joueurs_melanges = self.joueurs[:]
-        random.shuffle(joueurs_melanges)
-        
-        # Répartir les joueurs selon les tailles requises
-        index = 0
-        for i, taille in enumerate(self.tailles_poules):
-            self.poules[i] = joueurs_melanges[index:index + taille]
-            index += taille
-        
-    def ameliorer_solution_locale(self, max_iterations=1000) -> Optional[List[List[Joueur]]]:
-        """Améliore une solution par échanges locaux"""
-        
-        for iteration in range(max_iterations):
-            amelioration = False
-            
-            # Essayer tous les échanges possibles entre poules
-            for i in range(self.nb_poules):
-                for j in range(i + 1, self.nb_poules):
-                    # Essayer d'échanger des joueurs entre poules i et j
-                    if len(self.poules[i]) > 0 and len(self.poules[j]) > 0:
-                        for idx_a in range(len(self.poules[i])):
-                            for idx_b in range(len(self.poules[j])):
-                                joueur_a = self.poules[i][idx_a]
-                                joueur_b = self.poules[j][idx_b]
-                                
-                                # Effectuer l'échange temporaire
-                                self.poules[i][idx_a] = joueur_b
-                                self.poules[j][idx_b] = joueur_a
-                                
-                                # Vérifier si les deux poules sont maintenant valides
-                                if (self.est_poule_valide(self.poules[i]) and 
-                                    self.est_poule_valide(self.poules[j])):
-                                    amelioration = True
-                                    break
-                                else:
-                                    # Annuler l'échange
-                                    self.poules[i][idx_a] = joueur_a
-                                    self.poules[j][idx_b] = joueur_b
-                            
-                            if amelioration:
-                                break
-                    
-                    if amelioration:
-                        break
-                
-                if amelioration:
-                    break
-            
-            # Si aucune amélioration, vérifier si la solution est complètement valide
-            if not amelioration:
-                if self.solution_complete_valide():
-                    return [poule[:] for poule in self.poules]
-                else:
-                    break
-        
-        return None
-        
-    def solution_complete_valide(self) -> bool:
-        """Vérifie si la solution actuelle est complètement valide"""
-        for i, poule in enumerate(self.poules):
-            if len(poule) != self.tailles_poules[i]:
-                return False
-            if not self.est_poule_valide(poule):
-                return False
-        return True
-        
     def afficher_resultats(self):
         """Affiche les résultats de la répartition"""
         print(f"\n=== RÉPARTITION EN {self.nb_poules} POULES DE TAILLES {self.tailles_poules} ===")
         
         for i, poule in enumerate(self.poules):
-            niveaux = [j.niveau for j in poule] if poule else []
+            niveaux = [j.niveau for j in poule.getJoueurs()] if poule.nbJoueursPoule() > 0 else []
             niveau_min = min(niveaux) if niveaux else 0
             niveau_max = max(niveaux) if niveaux else 0
             
-            print(f"\nPoule {i+1} ({len(poule)}/{self.tailles_poules[i]} joueurs) - Niveaux {niveau_min}-{niveau_max}:")
-            for joueur in sorted(poule, key=lambda x: -x.niveau):
+            print(f"\nPoule {i+1} ({poule.nbJoueursPoule()}/{self.tailles_poules[i]} joueurs) - Niveaux {niveau_min}-{niveau_max}:")
+            for joueur in sorted(poule.getJoueurs(), key=lambda x: -x.niveau):
                 print(f"  • {joueur.prenom} {joueur.nom}- age : {joueur.age} - niveau : {joueur.niveau}")
 
     def exemple_joueurs_fixe():
@@ -725,3 +650,5 @@ class RepartiteurPoulesFixes:
             print(f"\n🎉 TOUTES LES CONTRAINTES SONT RESPECTÉES!")
         else:
             print(f"\n⚠️  Certaines contraintes ne sont pas respectées.")
+
+   
