@@ -1,2 +1,5 @@
-Faker==37.6.0
-tzdata==2025.2
+requests
+python-dotenv
+pyairtable
+faker
+urllib3==1.26.18

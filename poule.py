@@ -5,7 +5,6 @@ import random
 from faker import Faker
 from typing import List, Dict, Tuple, Optional
 import itertools
-import pandas as pd
 import math
 
 import joueur
@@ -420,7 +419,7 @@ class RepartiteurPoulesFixes:
         self.nb_poules = len(tailles_poules)
         self.poules =[Poule(taille) for taille in self.tailles_poules]
         self.poids_niveau = 10      # Contrainte la plus importante
-        self.poids_familial = 5     # Contrainte importante  
+        self.poids_familial = 8    # Contrainte importante  
         self.poids_age = 1          # Contrainte d'équilibrage
         # Vérification préalable
         if sum(tailles_poules) != len(joueurs):

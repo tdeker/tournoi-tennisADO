@@ -1,16 +1,18 @@
 from collections import defaultdict, Counter
 import random
+from typing import Literal
 from faker import Faker
 from typing import List, Dict, Tuple, Optional
 
 
 class Joueur:
-    def __init__(self, name: str, age: int,niveau: int, seededPlayer: bool):
-        self.prenom = name.split()[0] if len(name.split()) > 0 else ""
-        self.nom = name.split()[-1] if len(name.split()) > 1 else name # attention il va y avoir des problèmes sur les noms de famille composés
+    def __init__(self, name: str, familyName,  sexe: Literal["M", "F"],age: int,niveau: int, seededPlayer: bool):
+        self.prenom = name
+        self.nom = familyName
         self.tete_de_serie = seededPlayer
         self.age = age
         self.niveau = niveau
+        self.sexe =sexe
 
     def __repr__(self):
         return f"{self.prenom} {self.nom} (N{self.niveau})"
@@ -52,11 +54,12 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
     niveaux_choix = [1, 2, 3, 4, 5]
     
     # Déterminer le nombre de familles (environ 10-20% des joueurs peuvent être en famille)
-    nb_familles = random.randint(1, max(1, nb_inscris // 8))
+    nb_familles = random.randint(1, max(1, nb_inscris // 7))
     
     # Générer les noms de famille pour les familles
     noms_familles = []
     for _ in range(nb_familles):
+
         nom_famille = fake.last_name()
         # Chaque famille aura 2-3 membres
         nb_membres = random.choice([2, 2, 3])  # Plus de chance d'avoir 2 membres
@@ -69,8 +72,11 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
     
     # Créer les joueurs de familles
     for i, nom_famille in enumerate(noms_familles):
-        prenom = fake.first_name()
-        name = f"{prenom} {nom_famille}"
+        sexe = fake.random_element(["M", "F"])
+        if sexe == "M":
+            prenom = fake.first_name_male()   # ← prénom masculin garanti
+        else:
+            prenom = fake.first_name_female() # ← prénom féminin garant
         age = random.randint(7, 17)
         
         # Déterminer si c'est une tête de série
@@ -83,7 +89,7 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
             # Distribution pondérée favorisant les bas niveaux (1, 2, 3)
             niveau = random.choices(niveaux_choix, weights=niveaux_poids)[0]
         
-        joueur = Joueur(name, age, niveau, is_seeded)
+        joueur = Joueur(prenom, nom_famille,sexe, age, niveau, is_seeded)
         joueurs.append(joueur)
     
     # Créer les joueurs restants (noms uniques)
@@ -91,19 +97,29 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
     
     # Créer les têtes de série restantes
     for i in range(nb_seeded_restants):
-        name = fake.name()
+        sexe = fake.random_element(["M", "F"])
+        nom=fake.last_name()
+        if sexe == "M":
+            prenom = fake.first_name_male()   # ← prénom masculin garanti
+        else:
+            prenom = fake.first_name_female() # ← prénom féminin garanti
         age = random.randint(7, 17)
         niveau = random.choices([3, 4, 5], weights=[30, 40, 30])[0]
-        joueur = Joueur(name, age, niveau, True)
+        joueur = Joueur(prenom,nom,sexe, age, niveau, True)
         joueurs.append(joueur)
     
     # Créer les joueurs non têtes de série restants
     nb_non_seeded_restants = nb_joueurs_uniques - nb_seeded_restants
     for i in range(nb_non_seeded_restants):
-        name = fake.name()
+        sexe = fake.random_element(["M", "F"])
+        nom=fake.last_name()
+        if sexe == "M":
+            prenom = fake.first_name_male()   # ← prénom masculin garanti
+        else:
+            prenom = fake.first_name_female() # ← prénom féminin garanti
         age = random.randint(7, 17)
         niveau = random.choices(niveaux_choix, weights=niveaux_poids)[0]
-        joueur = Joueur(name, age, niveau, False)
+        joueur = Joueur(prenom,nom,sexe, age, niveau, False)
         joueurs.append(joueur)
     
     # Mélanger la liste pour avoir un ordre aléatoire

@@ -1,11 +1,40 @@
 from pyairtable import Api
-
+from joueur import *
 AIRTABLE_TOKEN = "patUgWdyAOP4lcUeb.5e64ecf450526591dc36b6a3c9dda130d159082384430efde4140dbd16c3cbaa"  # ton vrai token complet
 BASE_ID = "appIRSMg6tqFzeMr5"
 
-
 api = Api(AIRTABLE_TOKEN)
-base = api.base(BASE_ID)
+
+# provisionning des joueurs dans la table des joueurs
+TableJoueur = api.table(BASE_ID,"Joueur")
+## suppression des enregistrements préalabelement produit
+# Récupérer tous les IDs et les supprimer
+records = TableJoueur.all()
+ids = [record["id"] for record in records]
+TableJoueur.batch_delete(ids)
+
+print(f"✅ {len(ids)} enregistrements supprimés")
+## Création de la liste des joueurs inscrit
+nbInscris=27
+nbSeed=4
+print("debut")
+maListeDeJoueurs = creation_joueurs_avec_nom_famille(nbInscris,nbSeed) 
+
+for monJoueur in maListeDeJoueurs :
+    TableJoueur.create({
+        "Nom" : str(monJoueur.nom),
+        "Prénom" : str(monJoueur.prenom),
+        "Sexe" : str(monJoueur.sexe),
+        "Niveau" : str(monJoueur.niveau),
+        "Age" : int(monJoueur.age),
+        "Seed" :bool(monJoueur.tete_de_serie),
+    })
+
+
+
+exit()
+## Création de la table des joueurs
+
 """
 # ─────────────────────────────────────────
 # JOUEUR
