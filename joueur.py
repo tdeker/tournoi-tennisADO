@@ -1,8 +1,8 @@
 from collections import defaultdict, Counter
 import random
-from typing import Literal
 from faker import Faker
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Literal
+from utiles import *
 
 
 class Joueur:
@@ -13,7 +13,7 @@ class Joueur:
         self.age = age
         self.niveau = niveau
         self.sexe =sexe
-
+        self.code = generate_player_id(self.prenom,self.nom)
     def __repr__(self):
         return f"{self.prenom} {self.nom} (N{self.niveau})"
 

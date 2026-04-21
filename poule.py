@@ -1,5 +1,6 @@
 from collections import defaultdict, Counter
 #from posix import CLD_CONTINUED
+from utiles import NOMS_POULES_LEGENDES_FEMMES, NOMS_POULES_LEGENDES_HOMMES
 from joueur import *
 import random
 from faker import Faker
@@ -18,6 +19,7 @@ class Poule:
         self.name=""
         self.lieu=""
         self.joueurs: List[Joueur] = []
+        
 
     def nbJoueursPoule(self) -> int:
         return len(self.joueurs)
@@ -413,16 +415,26 @@ class PoolConfigurationGenerator: # cette classe est deprecated - A supprimer
         
         return pool_sizes
 class RepartiteurPoulesFixes:
-    def __init__(self, joueurs: List[Joueur], tailles_poules: List[int]):
+    def __init__(
+        self,
+        joueurs: List[Joueur],
+        pouleConfiguration: PoolConfigurationGeneratorByTristan,
+        sexe: Optional[str] = None
+    ):
         self.joueurs = joueurs
-        self.tailles_poules = sorted(tailles_poules, reverse=True)
-        self.nb_poules = len(tailles_poules)
-        self.poules =[Poule(taille) for taille in self.tailles_poules]
+        self.tailles_poules = sorted(pouleConfiguration.get_pool_sizes_list(), reverse=True)
+        self.nb_gagnants = sorted(pouleConfiguration.get_winners_per_pool(), reverse=True)
+        self.nb_poules = len(self.tailles_poules)
+        self.poules = [Poule(taille) for taille in self.tailles_poules]
         self.poids_niveau = 10      # Contrainte la plus importante
         self.poids_familial = 8    # Contrainte importante  
         self.poids_age = 1          # Contrainte d'équilibrage
+        if sexe == "F" :
+            self.NOMS_POULES_LEGENDES = NOMS_POULES_LEGENDES_FEMMES
+        else :
+            self.NOMS_POULES_LEGENDES = NOMS_POULES_LEGENDES_HOMMES
         # Vérification préalable
-        if sum(tailles_poules) != len(joueurs):
+        if sum(self.tailles_poules) != len(joueurs):
             raise ValueError(f"Incompatibilité: {len(joueurs)} joueurs pour {sum(tailles_poules)} places")
 
     def est_poule_valide(self, poule: Poule) -> bool:
@@ -536,7 +548,8 @@ class RepartiteurPoulesFixes:
         for joueur in joueurs_tries:
             i = self.trouver_poule_pour_un_joueur(joueur)
             if i is not None:
-                self.poules[i].ajouterJoueur(joueur)    
+                self.poules[i].ajouterJoueur(joueur)
+                self.poules[i].name = self.NOMS_POULES_LEGENDES[i]
             else:
                 # Impossible d'assigner ce joueur
                 print(f"je ne peux pas assigner le joueur {joueur.prenom} {joueur.nom} à une poule")
@@ -547,6 +560,8 @@ class RepartiteurPoulesFixes:
         return total_joueurs_assignes == len(joueurs)
 
     ## FIN séquence de méthode pour calculer la répartition avec l'algorithme de Tristan    
+    def get_Poules(self) :
+        return self.poules
 
     def afficher_resultats(self):
         """Affiche les résultats de la répartition"""
@@ -557,7 +572,7 @@ class RepartiteurPoulesFixes:
             niveau_min = min(niveaux) if niveaux else 0
             niveau_max = max(niveaux) if niveaux else 0
             
-            print(f"\nPoule {i+1} ({poule.nbJoueursPoule()}/{self.tailles_poules[i]} joueurs) - Niveaux {niveau_min}-{niveau_max}:")
+            print(f"\nPoule {i+1}: {poule.name} ({poule.nbJoueursPoule()}/{self.tailles_poules[i]} joueurs) - Niveaux {niveau_min}-{niveau_max}:")
             for joueur in sorted(poule.getJoueurs(), key=lambda x: -x.niveau):
                 print(f"  • {joueur.prenom} {joueur.nom}- age : {joueur.age} - niveau : {joueur.niveau}")
 

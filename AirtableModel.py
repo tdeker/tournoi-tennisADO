@@ -5,6 +5,9 @@ BASE_ID = "appIRSMg6tqFzeMr5"
 
 api = Api(AIRTABLE_TOKEN)
 
+
+
+
 # provisionning des joueurs dans la table des joueurs
 TableJoueur = api.table(BASE_ID,"Joueur")
 ## suppression des enregistrements préalabelement produit
@@ -15,7 +18,7 @@ TableJoueur.batch_delete(ids)
 
 print(f"✅ {len(ids)} enregistrements supprimés")
 ## Création de la liste des joueurs inscrit
-nbInscris=27
+nbInscris=33
 nbSeed=4
 print("debut")
 maListeDeJoueurs = creation_joueurs_avec_nom_famille(nbInscris,nbSeed) 
@@ -28,6 +31,7 @@ for monJoueur in maListeDeJoueurs :
         "Niveau" : str(monJoueur.niveau),
         "Age" : int(monJoueur.age),
         "Seed" :bool(monJoueur.tete_de_serie),
+        "CodeJoueur" : str(monJoueur.code)
     })
 
 

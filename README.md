@@ -19,3 +19,6 @@ def decomp_max_a(n):
 # Exemples
 for n in range(10, 100):
     print(n, "->", decomp_max_a(n))
+
+# 25/01
+l'algo de création de Poule qui maximise les poules de 4 est correcte, après est ce que cela est vraiment opprotun de faire des poules de 4 mettre peut un paramètre pour maximiser les nombrede poules de 5
