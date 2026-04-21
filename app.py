@@ -8,6 +8,62 @@ from dotenv import load_dotenv
 import os
 from pyairtable import Api
 import hashlib
+import sys
+print("=" * 50, file=sys.stderr)
+print("DEBUT DU CHARGEMENT DE APP.PY", file=sys.stderr)
+print("=" * 50, file=sys.stderr)
+
+try:
+    print("Import Flask...", file=sys.stderr)
+    from flask import Flask, jsonify, request
+    print("✅ Flask OK", file=sys.stderr)
+    
+    print("Import CORS...", file=sys.stderr)
+    from flask_cors import CORS
+    print("✅ CORS OK", file=sys.stderr)
+    
+    print("Import poule...", file=sys.stderr)
+    from poule import *
+    print("✅ poule OK", file=sys.stderr)
+    
+    print("Import utiles...", file=sys.stderr)
+    from utiles import *
+    print("✅ utiles OK", file=sys.stderr)
+    
+    from itertools import zip_longest
+    import math
+    from dotenv import load_dotenv
+    import os
+    from pyairtable import Api
+    import hashlib
+    print("✅ Tous les imports OK", file=sys.stderr)
+    
+except Exception as e:
+    print("=" * 50, file=sys.stderr)
+    print(f"❌ ERREUR D'IMPORT: {e}", file=sys.stderr)
+    print("=" * 50, file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+
+# Charger les variables d'environnement
+load_dotenv()
+
+print("Création de l'app Flask...", file=sys.stderr)
+app = Flask(__name__)
+CORS(app)
+print("✅ App Flask créée", file=sys.stderr)
+
+# Configuration Airtable
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+BASE_ID = os.getenv("BASE_ID")
+
+print(f"AIRTABLE_TOKEN présent: {AIRTABLE_TOKEN is not None}", file=sys.stderr)
+print(f"BASE_ID présent: {BASE_ID is not None}", file=sys.stderr)
+
+# ... reste de votre code exactement comme avant ...
+
+
 
 # Charger les variables d'environnement
 load_dotenv()
