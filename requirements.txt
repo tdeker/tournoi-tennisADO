@@ -1,5 +1,9 @@
 requests
 python-dotenv
-pyairtable
 faker
 urllib3==1.26.18
+flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
+python-dotenv==1.0.0
+pyairtable==2.3.3
