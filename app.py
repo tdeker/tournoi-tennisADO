@@ -47,6 +47,7 @@ def records_to_joueurs(records) -> list:
 def home():
     return jsonify({
         "message": "API de gestion des poules de tennis",
+        "status": "active",
         "endpoints": {
             "/api/joueurs": "GET - Liste des joueurs",
             "/api/poules/generer": "POST - Générer les poules",
@@ -65,90 +66,124 @@ def get_joueurs():
         return jsonify({
             "success": True,
             "count": len(joueurs),
-            "joueurs": [{"prenom": j.prenom, "nom": j.nom, "niveau": j.niveau} for j in joueurs]
+            "joueurs": [
+                {
+                    "prenom": j.prenom, 
+                    "nom": j.nom, 
+                    "niveau": j.niveau,
+                    "sexe": j.sexe,
+                    "age": j.age
+                } for j in joueurs
+            ]
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/poules/genererOLD', methods=['POST'])
-def generer_poules():
-    try:
-        load_dotenv()  # charge le fichier .env
-        AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
-        BASE_ID        = os.getenv("BASE_ID")
-        monApiAT = Api(AIRTABLE_TOKEN)
-
-        tableJoueur = monApiAT.table(BASE_ID, "Joueur")
-        tablePoule = monApiAT.table(BASE_ID,"Poule")
-        tablePoule_Joueur = monApiAT.table(BASE_ID,"Poule_Joueur")
-        records = tableJoueur.all()
-        maListeDeJoueurs = records_to_joueurs(records)
-        maListeDeJoueursFeminin: List[Joueur] = []
-        maListeDeJoueursMasculin: List[Joueur] = []
-        ### Effacer les poules créées précédement
-        records = tablePoule.all()
-        ids = [record["id"] for record in records]
-        tablePoule.batch_delete(ids)
-        records = tablePoule_Joueur.all()
-        ids = [record["id"] for record in records]
-        tablePoule_Joueur.batch_delete(ids)
-        ### Création des poules
-        for joueurCourant in maListeDeJoueurs:
-          print(joueurCourant.prenom + " " + joueurCourant.nom + "-" + str(joueurCourant.niveau) + "-" + str(joueurCourant.age) + "-" + str(joueurCourant.tete_de_serie))  
-        if joueurCourant.sexe == "F" :
-         maListeDeJoueursFeminin.append(joueurCourant)
-        else :
-         maListeDeJoueursMasculin.append(joueurCourant)
-        for monSexeCourant, maListeDeJoueurCourante in zip(["F", "M"], [maListeDeJoueursFeminin, maListeDeJoueursMasculin]):
-            nbInscris=len(maListeDeJoueurCourante)
-            maConfigurationPoule = PoolConfigurationGeneratorByTristan(nbInscris,1)
-            print(f'nombre de gagnant par poule:{maConfigurationPoule.get_winners_per_pool()}')
-            print(maConfigurationPoule.get_pool_sizes_list())
-            mesMatchsDePoules = RepartiteurPoulesFixes(maListeDeJoueurCourante, maConfigurationPoule,monSexeCourant)
-            mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurCourante)
-            mesMatchsDePoules.afficher_resultats()
-        ### Provisionning des Poules dans Airtable
-        #### Provisionning des poules des joueurs dans les poules
-        for i, unePoule in enumerate(mesMatchsDePoules.get_Poules(), start=0):
-            print(f'Building Poule {unePoule.name}')
-            tablePoule.create({
-                "Nom" : str(unePoule.name),
-                "nb_gagnant" : int(mesMatchsDePoules.nb_gagnants[i]),
-                "nb_joueurs" : int(unePoule.nb_joueurs),
-                "lieu" : str(unePoule.lieu),
-            })
-            for unJoueur in unePoule.getJoueurs():
-                records = tableJoueur.all(formula=f"{{codejoueur}}='{unJoueur.code}'")
-                if not records:
-                    raise ValueError(f"Joueur introuvable : {unJoueur.code}")
-                tablePoule_Joueur.create({
-                "Poule" : str(unePoule.name),
-                "CodeJoueur" : [records[0]["id"]]
-            })
-    
-        return jsonify({"success": True, "message": "Poules générées"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
+@app.route('/api/poules/generer', methods=['POST'])
 def generer_poules():
     try:
         tableJoueur, tablePoule, tablePoule_Joueur = get_airtable_tables()
         
-        # Votre logique existante de génération de poules
         records = tableJoueur.all()
         maListeDeJoueurs = records_to_joueurs(records)
+        maListeDeJoueursFeminin = []
+        maListeDeJoueursMasculin = []
         
-        # Supprimer poules existantes
-        tablePoule.batch_delete([r["id"] for r in tablePoule.all()])
-        tablePoule_Joueur.batch_delete([r["id"] for r in tablePoule_Joueur.all()])
+        ### Effacer les poules créées précédemment
+        records = tablePoule.all()
+        ids = [record["id"] for record in records]
+        if ids:
+            tablePoule.batch_delete(ids)
         
-        # Séparer par sexe et générer
-        # ... votre code ici ...
+        records = tablePoule_Joueur.all()
+        ids = [record["id"] for record in records]
+        if ids:
+            tablePoule_Joueur.batch_delete(ids)
         
-        return jsonify({"success": True, "message": "Poules générées"})
+        ### Séparation par sexe - CORRECTION DE L'INDENTATION
+        for joueurCourant in maListeDeJoueurs:
+            print(f"{joueurCourant.prenom} {joueurCourant.nom} - Niveau: {joueurCourant.niveau} - Age: {joueurCourant.age} - Tête de série: {joueurCourant.tete_de_serie}")  
+            if joueurCourant.sexe == "F":
+                maListeDeJoueursFeminin.append(joueurCourant)
+            else:
+                maListeDeJoueursMasculin.append(joueurCourant)
+        
+        resultats = {"feminines": [], "masculines": []}
+        
+        ### Création des poules
+        for monSexeCourant, maListeDeJoueurCourante, cle in zip(
+            ["F", "M"], 
+            [maListeDeJoueursFeminin, maListeDeJoueursMasculin],
+            ["feminines", "masculines"]
+        ):
+            if len(maListeDeJoueurCourante) == 0:
+                continue
+                
+            nbInscris = len(maListeDeJoueurCourante)
+            maConfigurationPoule = PoolConfigurationGeneratorByTristan(nbInscris, 1)
+            print(f'Nombre de gagnants par poule: {maConfigurationPoule.get_winners_per_pool()}')
+            print(f'Tailles des poules: {maConfigurationPoule.get_pool_sizes_list()}')
+            
+            mesMatchsDePoules = RepartiteurPoulesFixes(
+                maListeDeJoueurCourante, 
+                maConfigurationPoule, 
+                monSexeCourant
+            )
+            mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurCourante)
+            mesMatchsDePoules.afficher_resultats()
+            
+            ### Provisioning des Poules dans Airtable
+            for i, unePoule in enumerate(mesMatchsDePoules.get_Poules(), start=0):
+                print(f'Building Poule {unePoule.name}')
+                tablePoule.create({
+                    "Nom": str(unePoule.name),
+                    "nb_gagnant": int(mesMatchsDePoules.nb_gagnants[i]),
+                    "nb_joueurs": int(unePoule.nb_joueurs),
+                    "lieu": str(unePoule.lieu),
+                })
+                
+                poule_info = {
+                    "nom": unePoule.name,
+                    "nb_gagnant": mesMatchsDePoules.nb_gagnants[i],
+                    "nb_joueurs": unePoule.nb_joueurs,
+                    "joueurs": []
+                }
+                
+                for unJoueur in unePoule.getJoueurs():
+                    records = tableJoueur.all(formula=f"{{codejoueur}}='{unJoueur.code}'")
+                    if not records:
+                        raise ValueError(f"Joueur introuvable : {unJoueur.code}")
+                    
+                    tablePoule_Joueur.create({
+                        "Poule": str(unePoule.name),
+                        "CodeJoueur": [records[0]["id"]]
+                    })
+                    
+                    poule_info["joueurs"].append({
+                        "prenom": unJoueur.prenom,
+                        "nom": unJoueur.nom,
+                        "niveau": unJoueur.niveau
+                    })
+                
+                resultats[cle].append(poule_info)
+        
+        return jsonify({
+            "success": True, 
+            "message": "Poules générées avec succès",
+            "poules": resultats
+        })
+        
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check pour Railway"""
+    return jsonify({"status": "healthy"}), 200
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 6000))
-    app.run(host='0.0.0.0', port=port)
+    # ✅ CORRECTION : Utiliser la variable PORT de Railway
+    port = int(os.environ.get('PORT', 5000))  # Changé de 6000 à 5000
+    app.run(host='0.0.0.0', port=port, debug=False)
