@@ -1,3 +1,5 @@
+# prévoir de faire un objet Poule comme étant une liste de liste de joueurs
+from __future__ import annotations
 from collections import defaultdict, Counter
 #from posix import CLD_CONTINUED
 from utiles import NOMS_POULES_LEGENDES_FEMMES, NOMS_POULES_LEGENDES_HOMMES
@@ -7,24 +9,35 @@ from faker import Faker
 from typing import List, Dict, Tuple, Optional
 import itertools
 import math
-
+from typing import List
+import statistics
 import joueur
+from copy import deepcopy
 
-# prévoir de faire un objet Poule comme étant une liste de liste de joueurs
+
 class Poule:
     def __init__(self, nb_joueur: int) -> None:
-        self.nb_joueurs = nb_joueur
-        self.nb_gagnant = 0  
-        self.nb_console=0
-        self.name=""
-        self.lieu=""
+        # ── attributs originaux ──────────────────
+        self.nb_joueurs  = nb_joueur
+        self.nb_gagnant  = 0
+        self.nb_console  = 0
+        self.name        = ""
+        self.lieu        = ""
         self.joueurs: List[Joueur] = []
-        
+
+        # ── validation ajoutée ───────────────────
+        assert 3 <= nb_joueur <= 5, f"Capacité invalide : {nb_joueur} (attendu 3-5)"
+
+    # ════════════════════════════════════════════
+    #  Méthodes originales (inchangées)
+    # ════════════════════════════════════════════
 
     def nbJoueursPoule(self) -> int:
         return len(self.joueurs)
+
     def taillePoule(self) -> int:
         return self.nb_joueurs
+
     def nbGagnantsPoule(self) -> int:
         return self.nb_gagnant
 
@@ -84,6 +97,48 @@ class Poule:
             f"Poule(nom='{self.name}', taille={self.nb_joueurs}, "
             f"inscrits={len(self.joueurs)}, gagnants={self.nb_gagnant})"
         )
+
+    # ════════════════════════════════════════════
+    #  Propriétés ajoutées pour l'aalgorithme d'allocation des joueurs dans les poules
+    # ════════════════════════════════════════════
+
+    @property
+    def capacite(self) -> int:
+        """Alias de nb_joueurs — utilisé par AllocationJoueur."""
+        return self.nb_joueurs
+
+    @property
+    def est_pleine(self) -> bool:
+        """Alias de estComplete() — utilisé par AllocationJoueur."""
+        return self.estComplete()
+
+    @property
+    def est_vide(self) -> bool:
+        return len(self.joueurs) == 0
+
+    @property
+    def taille(self) -> int:
+        """Alias de nbJoueursInscrits() — utilisé par AllocationJoueur."""
+        return len(self.joueurs)
+
+    @property
+    def niveaux_presents(self) -> set[int]:
+        return {j.niveau for j in self.joueurs}
+
+    @property
+    def age_moyen(self) -> float | None:
+        return statistics.mean(j.age for j in self.joueurs) if self.joueurs else None
+
+    def taux_zone(self, zone: int) -> float:
+        if not self.joueurs:
+            return 0.0
+        return sum(1 for j in self.joueurs if j.zone == zone) / self.taille
+
+    def nb_doublons_niveau(self, niveau: int) -> int:
+        return sum(1 for j in self.joueurs if j.niveau == niveau)
+
+    def a_meme_famille(self, joueur: Joueur) -> bool:
+        return any(j.nom_famille == joueur.nom_famille for j in self.joueurs)
    
 class PoolConfigurationGeneratorByTristan:
     def __init__(self, nb_joueur: int, nb_console: int = 1):
@@ -185,484 +240,311 @@ class PoolConfigurationGeneratorByTristan:
             self.poules[i].nb_gagnant = nb
             
         return resultats
-class PoolConfigurationGenerator: # cette classe est deprecated - A supprimer
-    # Recompute a plan (N=15..40) that MINIMIZES matches (priorité poules de 3),
-    # while enforcing PER-POULE constraint: winners_i <= size_i - 1
-    # i.e., au moins 1 éliminé dans chaque poule (aucune poule "tout le monde passe").
-    #
-    # Constraints:
-    # - Poules de 3..5 joueurs -> à changer pour des poules de 4, 5 et 6 en privilégiant les poules de 4 et 5
-    # - P <= joueurs à éliminer  (au moins 1 perdant globalement)
-    # - P <= Q                  (au moins 1 qualifié par poule)
-    # - NEW: Somme max des qualifiés possible = sum(size_i - 1) >= Q
-    #
-    # Strategy:
-    # - For each N, try M in {32,16,8} (largest first), pick feasible configs;
-    # - Among feasible, minimize total matches; tie-breakers: more 3s, fewer 5s, more 4s, larger P;
-    # - Compute winners-per-pool vector with cap size_i-1, distributing extra qualifiers to larger pools first;
-    # - Output winners string like "2213" (order: larger pools first, then any tie-resolved order).
-    
-    def __init__(self):
-        # génération du dataframe des configurations de poules possibles
-        rows = [self.plan_for_N_with_caps(N) for N in range(15, 41)]
-        self.df_caps = pd.DataFrame(rows)
-        #plus tard nous définirons les différents paramètres pour générer des configurations de pool différentes suivant les priorités
 
-    def matches_in_pool(self, n):
-        return n * (n - 1) // 2
-
-    def feasible_configs_with_caps(self, players: int, Q: int, eliminated: int) -> List[Tuple[Tuple[int, int, int, int], int, List[int], int]]:
+class AllocationJoueur:
+    """
+    Paramètres
+    ----------
+    poules   : liste de Poule vides (capacité 3–5 chacune)
+    joueurs  : liste de Joueur à affecter
+ 
+    Utilisation
+    -----------
+    >>> alloc = AllocationJoueur(poules, joueurs)
+    >>> alloc.allouer()
+    >>> alloc.afficher_resultat()
+    >>> score = alloc.score_global()
+    """
+ 
+    # Poids des critères
+    W_GEO     = 40   # géographie homogène    (priorité 1)
+    W_NIVEAU  = 30   # niveaux hétérogènes    (priorité 2)
+    W_FAMILLE = 50   # contrainte famille     (priorité 3, quasi-dure)
+    W_AGE     = 10   # âge homogène           (priorité 4)
+ 
+    ECART_AGE_MAX = 10  # écart d'âge normalisateur (en années)
+ 
+    def __init__(self, poules: list[Poule], joueurs: list[Joueur]):
+        capacite_totale = sum(p.capacite for p in poules)
+        if len(joueurs) > capacite_totale:
+            raise ValueError(
+                f"Trop de joueurs ({len(joueurs)}) "
+                f"pour la capacité totale des poules ({capacite_totale})."
+            )
+        self.poules  = [deepcopy(p) for p in poules]
+        self.joueurs = list(joueurs)
+        self._nb_swaps = 0
+ 
+    # ─────────────────────────────────────────
+    #  Calcul de coût (sur liste de référence)
+    # ─────────────────────────────────────────
+ 
+    def _cout_geo(self, joueur: Joueur, joueurs_ref: list[Joueur]) -> float:
+        """Priorité 1 — Géographie homogène."""
+        if not joueurs_ref:
+            return 0.0
+        taux = sum(1 for j in joueurs_ref if j.zone == joueur.zone) / len(joueurs_ref)
+        return self.W_GEO * (1 - taux)
+ 
+    def _cout_niveau(self, joueur: Joueur, joueurs_ref: list[Joueur],
+                     capacite: int) -> float:
+        """Priorité 2 — Niveaux hétérogènes. Bonus si tous les niveaux sont couverts."""
+        if not joueurs_ref:
+            return 0.0
+        doublons = sum(1 for j in joueurs_ref if j.niveau == joueur.niveau)
+        c = self.W_NIVEAU * (doublons / len(joueurs_ref))
+ 
+        # Bonus : le joueur complète l'ensemble des niveaux cibles
+        niveaux_presents = {j.niveau for j in joueurs_ref}
+        niveaux_cibles   = set(range(1, min(6, capacite + 1)))
+        if (niveaux_presents | {joueur.niveau}) >= niveaux_cibles:
+            c -= 5
+ 
+        return max(0.0, c)
+ 
+    def _cout_famille(self, joueur: Joueur, joueurs_ref: list[Joueur]) -> float:
+        """Priorité 3 — Contrainte famille (quasi-dure)."""
+        if any(j.nom_famille == joueur.nom_famille for j in joueurs_ref):
+            return float(self.W_FAMILLE)
+        return 0.0
+ 
+    def _cout_age(self, joueur: Joueur, joueurs_ref: list[Joueur]) -> float:
+        """Priorité 4 — Âge homogène."""
+        if not joueurs_ref:
+            return 0.0
+        age_moy = statistics.mean(j.age for j in joueurs_ref)
+        ecart   = abs(joueur.age - age_moy) / self.ECART_AGE_MAX
+        return self.W_AGE * min(ecart, 1.0)
+ 
+    def _cout_joueur_dans_poule(self, joueur: Joueur, poule: Poule,
+                                 exclure_id: int = -1) -> float:
         """
-        Génère toutes les configurations de poules possibles pour un nombre donné de joueurs.
-        
-        Cette fonction trouve toutes les répartitions de joueurs en poules qui respectent les contraintes :
-        - Chaque poule doit contenir entre 3 et 5 joueurs
-        - Le nombre total de qualifiés possibles (somme des tailles de poules - 1) doit être >= Q
-        - Le nombre de poules doit être compatible avec le nombre de joueurs à éliminer
-        
-        Args:
-            players: Nombre total de joueurs à répartir en poules
-            Q: Nombre de joueurs à qualifier pour le tableau principal
-            eliminated: Nombre de joueurs à éliminer
-            
-        Returns:
-            Liste triée des configurations possibles, chacune contenant (clé_tri, nb_poules, tailles_poules, total_matchs)
-            Les configurations sont triées par priorité : moins de matchs, plus de poules de 3, moins de poules de 5
+        Coût d'un joueur vis-à-vis des autres membres de la poule.
+        exclure_id : id à ignorer dans la poule (utile pour les swaps).
         """
-        minP = math.ceil(players / 5)
-        maxP = max(1, math.floor(players / 3))
-        maxP = min(maxP, eliminated, Q)
-        results = []
-        
-        for P in range(minP, maxP + 1):
-            base = players // P
-            r = players % P
-            sizes = [base + 1] * r + [base] * (P - r)
-            
-            if not all(3 <= s <= 5 for s in sizes):
-                continue
-                
-            # Per-pool cap feasibility: sum(size_i - 1) must cover Q
-            if sum(s - 1 for s in sizes) < Q:
-                continue
-                
-            # Objective
-            c = Counter(sizes)
-            pools3, pools4, pools5 = c.get(3, 0), c.get(4, 0), c.get(5, 0)
-            totm = sum(self.matches_in_pool(s) for s in sizes)
-            key = (totm, -pools3, pools5, -pools4, -P)
-            results.append((key, P, sizes, totm))
-            
-        results.sort(key=lambda x: x[0])
-        return results
-    
-    def assign_winners_with_caps(self, sizes, Q):
-        """Return a per-pool winners list with sum=Q, each <= size-1, >=1.
-        Strategy: start with 1 per pool, then give remaining to largest pools first (cap size-1)."""
-        P = len(sizes)
-        winners = [1] * P
-        remaining = Q - P
-        
-        # Pools sorted by size desc, ties: keep stable order
-        order = sorted(range(P), key=lambda i: sizes[i], reverse=True)
-        
-        while remaining > 0:
-            progressed = False
-            for i in order:
-                cap = sizes[i] - 1
-                if winners[i] < cap:
-                    winners[i] += 1
-                    remaining -= 1
-                    progressed = True
-                if remaining == 0:
-                    break
-            if not progressed:
-                # Shouldn't happen due to feasibility check; break to avoid infinite loop
-                break
-        return winners
-
-    def winners_string_from_list(self, winners):
-        return "".join(str(x) for x in winners)
-
-    def plan_for_N_with_caps(self, N: int) -> dict:
+        ref = [j for j in poule.joueurs if j.id != exclure_id and j.id != joueur.id]
+        return (
+            self._cout_geo(joueur, ref)
+            + self._cout_niveau(joueur, ref, poule.capacite)
+            + self._cout_famille(joueur, ref)
+            + self._cout_age(joueur, ref)
+        )
+ 
+    def cout(self, joueur: Joueur, poule: Poule) -> float:
         """
-        Génère un plan de tournoi optimal pour N joueurs inscrits.
-        
-        Cette fonction détermine la meilleure configuration de tournoi en testant différents
-        tableaux principaux (M=32, 16, 8) et en optimisant la répartition en poules.
-        
-        Algorithme :
-        1. Teste les tableaux principaux de 32, 16, puis 8 joueurs
-        2. Pour chaque tableau, calcule le nombre de qualifiés nécessaires (Q)
-        3. Détermine la configuration de poules optimale qui minimise les matchs
-        4. Répartit les qualifiés entre les poules selon leur taille
-        
-        Paramètres fixes :
-        - seeds = 4 : Nombre de joueurs têtes de série (directement qualifiés)
-        - consolante = 1 : Nombre de places pour la consolante
-        
-        Args:
-            N: Nombre total de joueurs inscrits au tournoi (15-40)
-            
-        Returns:
-            Dictionnaire contenant la configuration optimale avec les clés :
-            - "Inscrits (N)": Nombre total d'inscrits
-            - "Tableau principal (M)": Taille du tableau principal (32, 16, 8)
-            - "Joueurs en poules": Nombre de joueurs participant aux poules
-            - "Qualifiés à prendre (Q)": Nombre de qualifiés à sélectionner
-            - "Joueurs à éliminer": Nombre de joueurs éliminés en poules
-            - "Nb de poules (P)": Nombre de poules
-            - "Répartition des poules": Format "X×3, Y×4, Z×5 joueurs"
-            - "Total matchs poules": Nombre total de matchs en poules
-            - "Gagnants par poule": Format "221" (nombre de qualifiés par poule)
-            
-        Note:
-            Si aucune configuration faisable n'est trouvée, retourne un dictionnaire
-            avec des valeurs vides et une note explicative.
+        Coût d'affectation d'un joueur dans une poule (poule non modifiée).
+        Retourne inf si la poule est pleine.
         """
-        seeds = 4
-        consolante = 1
-        
-        # Try M from largest to smallest
-        for M in [32, 16, 8]:
-            if (M == 32 and N < 17) or (M == 16 and N < 9):
-                continue
-                
-            Q = M - (seeds + consolante)
-            players = N - seeds
-            eliminated = players - Q
-            configs = self.feasible_configs_with_caps(players, Q, eliminated)
-            
-            if configs:
-                _, P, sizes, totm = configs[0]
-                winners = self.assign_winners_with_caps(sizes, Q)
-                c = Counter(sizes)
-                pools3, pools4, pools5 = c.get(3, 0), c.get(4, 0), c.get(5, 0)
-                
-                return {
-                    "Inscrits (N)": N,
-                    "Tableau principal (M)": M,
-                    "Joueurs en poules": players,
-                    "Qualifiés à prendre (Q)": Q,
-                    "Joueurs à éliminer": eliminated,
-                    "Nb de poules (P)": P,
-                    "Répartition des poules (min matchs)": f"{pools3}×3, {pools4}×4, {pools5}×5 joueurs",
-                    "Total matchs poules (min)": totm,
-                    "Gagnants par poule (format 221)": self.winners_string_from_list(winners)
-                }
-        
-        # No feasible config even with M=8
-        return {
-            "Inscrits (N)": N,
-            "Tableau principal (M)": "",
-            "Joueurs en poules": N - 4,
-            "Qualifiés à prendre (Q)": "",
-            "Joueurs à éliminer": "",
-            "Nb de poules (P)": "",
-            "Répartition des poules (min matchs)": "",
-            "Total matchs poules (min)": "",
-            "Gagnants par poule (format 221)": "",
-            "Note": "Aucune configuration faisable (même avec caps par poule)"
-        }
-    
-    def displayPoolFullConfigurations(self):
+        if poule.est_pleine:
+            return float('inf')
+        ref = list(poule.joueurs)
+        return (
+            self._cout_geo(joueur, ref)
+            + self._cout_niveau(joueur, ref, poule.capacite)
+            + self._cout_famille(joueur, ref)
+            + self._cout_age(joueur, ref)
+        )
+ 
+    # ─────────────────────────────────────────
+    #  Coût d'une poule complète
+    # ─────────────────────────────────────────
+ 
+    def _cout_poule(self, poule: Poule) -> float:
+        """Coût total = somme des coûts de chaque joueur vis-à-vis des autres."""
+        total = 0.0
+        for joueur in poule.joueurs:
+            total += self._cout_joueur_dans_poule(joueur, poule)
+        return total
+ 
+    def _cout_global(self) -> float:
+        return sum(self._cout_poule(p) for p in self.poules)
+ 
+    # ─────────────────────────────────────────
+    #  Tri des joueurs par difficulté de placement
+    # ─────────────────────────────────────────
+ 
+    def _difficulte(self, joueur: Joueur) -> float:
         """
-        Affiche les configurations de poules possibles pour le nombre de joueurs inscrits.
+        Les joueurs les plus difficiles à placer passent en premier :
+        famille nombreuse, niveau rare, zone isolée.
         """
-        print("in")
-        print(self.df_caps)
-    
-    def get_pool_sizes_list(self, N: int) -> List[int]:
-        """
-        Retourne la liste des tailles de toutes les poules pour un nombre donné de joueurs.
-        
-        Cette méthode utilise la configuration optimale générée par plan_for_N_with_caps
-        pour extraire les tailles individuelles de chaque poule et les retourner sous
-        forme de liste.
-        
-        Args:
-            N: Nombre total de joueurs inscrits au tournoi (15-40)
-            
-        Returns:
-            Liste des tailles de poules. Par exemple :
-            - Si configuration = "1×3, 2×4, 3×5 joueurs" → [3, 4, 4, 5, 5, 5]æ
-            - Si aucune configuration faisable → []
-            
-        Example:
-            >>> generator = PoolConfigurationGenerator()
-            >>> generator.get_pool_sizes_list(25)
-            [4, 4, 4, 5, 5]  # Exemple pour 25 joueurs
-        """
-        # Obtenir la configuration optimale pour N joueurs
-        config = self.plan_for_N_with_caps(N)
-        
-        # Vérifier si une configuration faisable existe
-        if not config.get("Nb de poules (P)") or config.get("Note"):
-            return []
-        
-        # Extraire les informations de la configuration
-        seeds = 4
-        players_in_pools = N - seeds
-        P = config["Nb de poules (P)"]
-        
-        # Recalculer les tailles de poules (même logique que dans plan_for_N_with_caps)
-        base = players_in_pools // P
-        remainder = players_in_pools % P
-        
-        # Créer la liste des tailles : les 'remainder' premières poules ont base+1 joueurs,
-        # les autres ont 'base' joueurs
-        pool_sizes = [base + 1] * remainder + [base] * (P - remainder)
-        
-        return pool_sizes
-class RepartiteurPoulesFixes:
-    def __init__(
-        self,
-        joueurs: List[Joueur],
-        pouleConfiguration: PoolConfigurationGeneratorByTristan,
-        sexe: Optional[str] = None
-    ):
-        self.joueurs = joueurs
-        self.tailles_poules = sorted(pouleConfiguration.get_pool_sizes_list(), reverse=True)
-        self.nb_gagnants = sorted(pouleConfiguration.get_winners_per_pool(), reverse=True)
-        self.nb_poules = len(self.tailles_poules)
-        self.poules = [Poule(taille) for taille in self.tailles_poules]
-        self.poids_niveau = 10      # Contrainte la plus importante
-        self.poids_familial = 8    # Contrainte importante  
-        self.poids_age = 1          # Contrainte d'équilibrage
-        if sexe == "F" :
-            self.NOMS_POULES_LEGENDES = NOMS_POULES_LEGENDES_FEMMES
-        else :
-            self.NOMS_POULES_LEGENDES = NOMS_POULES_LEGENDES_HOMMES
-        # Vérification préalable
-        if sum(self.tailles_poules) != len(joueurs):
-            raise ValueError(f"Incompatibilité: {len(joueurs)} joueurs pour {sum(tailles_poules)} places")
-
-    def est_poule_valide(self, poule: Poule) -> bool:
-        """Vérifie si une poule respecte toutes les contraintes"""
-        if not poule:
-            return True
-            
-        # Contrainte de niveau
-        niveaux = [j.niveau for j in poule.getJoueurs()]
-        if max(niveaux) - min(niveaux) > 1:
-            return False
-            
-        # Contrainte familiale
-        familles = [j.nom for j in poule.getJoueurs()]
-        if len(familles) != len(set(familles)):
-            return False
-            
-        return True
-
-    ## DEBUT séquence de méthode pour calculer la répartition avec l'algorithme de Tristan   
-            
-    def age_moyen_poule(self, ma_poule: Poule) -> float:
-        """Calcule l'âge moyen d'une poule"""
-        if not ma_poule:
-            return 100  # ou une valeur par défaut appropriée
-        else:
-            somme = sum(j.age for j in ma_poule.getJoueurs())
-            return somme / ma_poule.nb_joueurs()
-
-    def niveau_max_poule(self, ma_poule: List[Joueur]) -> int:
-        """Trouve le niveau maximum dans une poule"""
-        if not ma_poule:
-            return 5  # renvoie le niveau maximum possible
-        else:
-            niveau_max = ma_poule.getJoueurs()[0].niveau
-            for mon_joueur in ma_poule.getJoueurs():
-                if mon_joueur.niveau > niveau_max:
-                    niveau_max = mon_joueur.niveau
-            return niveau_max
-    def calculer_cout_pour_un_joueur_par_pool(self, joueur: Joueur, ma_poule: Poule) -> float:
-        """
-        Calcule le coût d'assignation avec priorisation des contraintes.
-        Plus le coût est faible, meilleure est l'assignation.
-        """
-        cout_total = 0
-       
-        # 1. COÛT NIVEAU (priorité maximale)
-        if ma_poule.nbJoueursPoule() > 0:
-            niveaux_actuels = [j.niveau for j in ma_poule.getJoueurs()]
-            niveau_min_actuel = min(niveaux_actuels)
-            niveau_max_actuel = max(niveaux_actuels)
-            
-            # Nouveau min/max après ajout
-            nouveau_min = min(niveau_min_actuel, joueur.niveau)
-            nouveau_max = max(niveau_max_actuel, joueur.niveau)
-            ecart_niveau = nouveau_max - nouveau_min
-            
-            # Pénalité exponentielle pour les écarts de niveau > 1
-            if ecart_niveau > 1:
-                cout_total += self.poids_niveau * (ecart_niveau - 1) ** 2
-        
-            # 2. COÛT FAMILIAL (priorité élevée)
-            noms_actuels = [j.nom for j in ma_poule.getJoueurs()]
-            if joueur.nom in noms_actuels:
-                cout_total += self.poids_familial
-            
-            # 3. COÛT ÂGE (équilibrage)
-            ages_actuels = [j.age for j in ma_poule.getJoueurs()]
-            age_moyen_actuel = sum(ages_actuels) / len(ages_actuels)
-            ecart_age = abs(joueur.age - age_moyen_actuel)
-            cout_total += self.poids_age * ecart_age
-            return cout_total
-        else :
-            return 15
-    def trouver_poule_pour_un_joueur(self, mon_joueur: Joueur) -> Optional[int]:
-        """Trouve la poule avec le coût le plus faible pour un joueur"""
-        if not self.poules:
-            return None
-        
-        couts = []
-        indices_valides = []
-        
-        for i, ma_poule_actuelle in enumerate(self.poules):
-            # Si la poule est pleine, on passe
-            if ma_poule_actuelle.nbJoueursPoule() >= self.tailles_poules[i]:
-                continue
-            
-            #cout = self.cout_poule_pour_un_joueur(ma_poule, mon_joueur)
-            cout = self.calculer_cout_pour_un_joueur_par_pool(mon_joueur, ma_poule_actuelle)
-            #print(cout)
-            couts.append(cout)
-            indices_valides.append(i)
-        
-        if not couts:
-            return None
-
-        # Retourner l'index de la poule avec le coût minimal
-        min_index = couts.index(min(couts))
-        return indices_valides[min_index]
-
-
-    def reset_poule(self) :
-        self.poules = [[] for _ in range(self.nb_poules)]
-
-    def repartir_par_couts_TK(self, joueurs: List[Joueur]) -> bool:
-        """Assigne les joueurs aux poules selon l'algorithme de coût"""
-        # Trier les joueurs par âge et par niveau décroissant
-        joueurs_tries = sorted(joueurs, key=lambda j: (-j.niveau, -j.age))
-        
-        # Parcourir les joueurs et assigner la poule la moins coûteuse par joueur
+        n = len(self.joueurs)
+        nb_meme_niveau  = sum(1 for j in self.joueurs if j.niveau       == joueur.niveau)
+        nb_meme_famille = sum(1 for j in self.joueurs if j.nom_famille  == joueur.nom_famille)
+        nb_meme_zone    = sum(1 for j in self.joueurs if j.zone         == joueur.zone)
+ 
+        return (1 / nb_meme_niveau) + (nb_meme_famille / n) + (1 / nb_meme_zone)
+ 
+    # ─────────────────────────────────────────
+    #  Phase 1 : Greedy
+    # ─────────────────────────────────────────
+ 
+    def _greedy(self) -> None:
+        """Affecte chaque joueur dans la poule de coût minimum."""
+        joueurs_tries = sorted(self.joueurs, key=self._difficulte, reverse=True)
+ 
         for joueur in joueurs_tries:
-            i = self.trouver_poule_pour_un_joueur(joueur)
-            if i is not None:
-                self.poules[i].ajouterJoueur(joueur)
-                self.poules[i].name = self.NOMS_POULES_LEGENDES[i]
-            else:
-                # Impossible d'assigner ce joueur
-                print(f"je ne peux pas assigner le joueur {joueur.prenom} {joueur.nom} à une poule")
-                return False
-        
-        # Vérifier que tous les joueurs ont été assignés
-        total_joueurs_assignes = sum(poule.nbJoueursPoule() for poule in self.poules)
-        return total_joueurs_assignes == len(joueurs)
+            meilleure_poule = None
+            meilleur_cout   = float('inf')
+ 
+            for poule in self.poules:
+                c = self.cout(joueur, poule)
+                if c < meilleur_cout:
+                    meilleur_cout   = c
+                    meilleure_poule = poule
+ 
+            if meilleure_poule is None:
+                raise RuntimeError(
+                    f"Impossible de placer {joueur} : toutes les poules sont pleines."
+                )
+            meilleure_poule.joueurs.append(joueur)
+ 
+    # ─────────────────────────────────────────
+    #  Phase 2 : Optimisation par swaps 2-opt
+    # ─────────────────────────────────────────
+ 
+    def _swap_local(self) -> int:
+        """
+        Échange des paires de joueurs entre deux poules différentes
+        si le swap améliore le coût global. Répète jusqu'à stabilité.
+        """
+        nb_swaps = 0
+        ameliore = True
+ 
+        while ameliore:
+            ameliore = False
+ 
+            for p1, p2 in itertools.combinations(self.poules, 2):
+                for i in range(len(p1.joueurs)):
+                    for k in range(len(p2.joueurs)):
+                        j1 = p1.joueurs[i]
+                        j2 = p2.joueurs[k]
+ 
+                        cout_avant = self._cout_poule(p1) + self._cout_poule(p2)
+ 
+                        # Effectue le swap
+                        p1.joueurs[i] = j2
+                        p2.joueurs[k] = j1
+ 
+                        cout_apres = self._cout_poule(p1) + self._cout_poule(p2)
+ 
+                        if cout_apres < cout_avant - 1e-6:
+                            # Swap bénéfique → on le conserve
+                            nb_swaps += 1
+                            ameliore  = True
+                        else:
+                            # Pas d'amélioration → on annule
+                            p1.joueurs[i] = j1
+                            p2.joueurs[k] = j2
+ 
+        return nb_swaps
+ 
+    # ─────────────────────────────────────────
+    #  Point d'entrée principal
+    # ─────────────────────────────────────────
+ 
+    def allouer(self) -> None:
+        """Lance l'algorithme complet : greedy + optimisation par swaps."""
+        for p in self.poules:
+            p.joueurs = []
+ 
+        self._greedy()
+        self._nb_swaps = self._swap_local()
+ 
+    # ─────────────────────────────────────────
+    #  Score global et diagnostics
+    # ─────────────────────────────────────────
+ 
+    def score_global(self) -> float:
+        """Coût global de l'allocation (plus bas = meilleur)."""
+        return self._cout_global()
+ 
+    def diagnostics(self) -> dict:
+        """Rapport détaillé de la qualité de l'allocation."""
+        rapport = {}
+        for poule in self.poules:
+            zones    = [j.zone   for j in poule.joueurs]
+            niveaux  = [j.niveau for j in poule.joueurs]
+            ages     = [j.age    for j in poule.joueurs]
+            familles = [j.nom_famille for j in poule.joueurs]
+ 
+            zone_dom      = max(set(zones), key=zones.count) if zones else None
+            taux_zone_dom = zones.count(zone_dom) / len(zones) if zones else 0
+ 
+            rapport[f"Poule_{poule.id}"] = {
+                "nb_joueurs"          : poule.taille,
+                "niveaux"             : sorted(niveaux),
+                "niveaux_uniques"     : len(set(niveaux)) == len(niveaux),
+                "zones"               : zones,
+                "taux_zone_dominante" : round(taux_zone_dom, 2),
+                "age_moyen"           : round(statistics.mean(ages), 1) if ages else None,
+                "ecart_type_age"      : round(statistics.stdev(ages), 1) if len(ages) > 1 else 0,
+                "collision_famille"   : len(familles) != len(set(familles)),
+                "cout_poule"          : round(self._cout_poule(poule), 2),
+            }
+        rapport["score_global"] = round(self.score_global(), 2)
+        rapport["nb_swaps"]     = self._nb_swaps
+        return rapport
+ 
+    # ─────────────────────────────────────────
+    #  Affichage console
+    # ─────────────────────────────────────────
+ 
+    def diagnostics(self) -> dict:
+        rapport = {}
+        for i, poule in enumerate(self.poules, start=1):  # ← on génère un index
+            zones    = [j.zone   for j in poule.joueurs]
+            niveaux  = [j.niveau for j in poule.joueurs]
+            ages     = [j.age    for j in poule.joueurs]
+            familles = [j.nom_famille for j in poule.joueurs]
 
-    ## FIN séquence de méthode pour calculer la répartition avec l'algorithme de Tristan    
-    def get_Poules(self) :
-        return self.poules
+            zone_dom      = max(set(zones), key=zones.count) if zones else None
+            taux_zone_dom = zones.count(zone_dom) / len(zones) if zones else 0
 
-    def afficher_resultats(self):
-        """Affiche les résultats de la répartition"""
-        print(f"\n=== RÉPARTITION EN {self.nb_poules} POULES DE TAILLES {self.tailles_poules} ===")
-        
-        for i, poule in enumerate(self.poules):
-            niveaux = [j.niveau for j in poule.getJoueurs()] if poule.nbJoueursPoule() > 0 else []
-            niveau_min = min(niveaux) if niveaux else 0
-            niveau_max = max(niveaux) if niveaux else 0
-            
-            print(f"\nPoule {i+1}: {poule.name} ({poule.nbJoueursPoule()}/{self.tailles_poules[i]} joueurs) - Niveaux {niveau_min}-{niveau_max}:")
-            for joueur in sorted(poule.getJoueurs(), key=lambda x: -x.niveau):
-                print(f"  • {joueur.prenom} {joueur.nom}- age : {joueur.age} - niveau : {joueur.niveau}")
+            cle = poule.name if poule.name else f"Poule_{i}"  # ← nom ou index
 
-    def exemple_joueurs_fixe():
-        # Création des joueurs
-        joueurs = [
-            Joueur("Martin", "Pierre", 5,False),
-            Joueur("Martin", "Paul", 4, False),  # Même famille que Pierre
-            Joueur("Dupont", "Marie", 5,False),
-            Joueur("Dubois", "Jean", 4,False),
-            Joueur("Leroy", "Sophie", 4,False),
-            Joueur("Bernard", "Luc", 3,False),
-            Joueur("Thomas", "Anne", 3,False),
-            Joueur("Petit", "Marc", 3,False),
-            Joueur("Robert", "Julie", 2,False),
-            Joueur("Richard", "Alex", 2,False),
-            Joueur("Moreau", "Emma", 2,False),
-            Joueur("Simon", "Tom", 1),False,
-            Joueur("Michel", "Lisa", 1,False),
-            Joueur("Garcia", "Hugo", 1,False),
-            Joueur("Roux", "Clara", 1,False),
-            Joueur("Roux", "Max", 2,False),  # Même famille que Clara
-        ]
-        
-        print(f"Nombre total de joueurs: {len(joueurs)}")
-        print("Distribution par niveau:")
-        niveaux = Counter(j.niveau for j in joueurs)
-        for niveau in sorted(niveaux.keys(), reverse=True):
-            print(f"  Niveau {niveau}: {niveaux[niveau]} joueurs")
-        
-        # Tailles de poules fixes : 4, 5, 3, 4 (total = 16)
-        tailles_poules = [4, 5, 3, 4]
-        print(f"\nTailles de poules imposées: {tailles_poules}")
-        
-        # Répartition avec backtracking
-        repartiteur = RepartiteurPoulesFixes(joueurs, tailles_poules)
-        print("\n🔍 Tentative par backtracking...")
-        poules = repartiteur.repartir_par_backtracking()
-        
-        if poules:
-            print("✅ Solution trouvée par backtracking!")
-            repartiteur.afficher_resultats()
-        else:
-            print("❌ Pas de solution par backtracking. Tentative par recherche locale...")
-            poules = repartiteur.repartir_par_recherche_locale()
-            
-            if poules:
-                print("✅ Solution trouvée par recherche locale!")
-                repartiteur.afficher_resultats()
-            else:
-                print("❌ Aucune solution trouvée. Les contraintes sont trop restrictives.")
-                return
-        
-        # Vérification des contraintes
-        print(f"\n=== VÉRIFICATION DES CONTRAINTES ===")
-        contraintes_ok = True
-        
-        for i, poule in enumerate(poules):
-            print(f"\nPoule {i+1}:")
-            
-            # Vérifier la taille
-            if len(poule) != tailles_poules[i]:
-                print(f"  ❌ Taille incorrecte: {len(poule)} au lieu de {tailles_poules[i]}")
-                contraintes_ok = False
-            else:
-                print(f"  ✅ Taille correcte: {len(poule)}")
-            
-            if poule:
-                niveaux = [j.niveau for j in poule]
-                familles = [j.nom for j in poule]
-                
-                # Vérifier contrainte de niveau
-                ecart = max(niveaux) - min(niveaux)
-                if ecart > 1:
-                    print(f"  ❌ Écart de niveau > 1: {min(niveaux)}-{max(niveaux)} (écart: {ecart})")
-                    contraintes_ok = False
-                else:
-                    print(f"  ✅ Écart de niveau OK: {min(niveaux)}-{max(niveaux)} (écart: {ecart})")
-                
-                # Vérifier contrainte familiale
-                if len(familles) != len(set(familles)):
-                    familles_dupliquees = [f for f in set(familles) if familles.count(f) > 1]
-                    print(f"  ❌ Familles en double: {familles_dupliquees}")
-                    contraintes_ok = False
-                else:
-                    print(f"  ✅ Pas de conflit familial")
-        
-        if contraintes_ok:
-            print(f"\n🎉 TOUTES LES CONTRAINTES SONT RESPECTÉES!")
-        else:
-            print(f"\n⚠️  Certaines contraintes ne sont pas respectées.")
+            rapport[cle] = {
+                "nb_joueurs"          : poule.taille,
+                "niveaux"             : sorted(niveaux),
+                "niveaux_uniques"     : len(set(niveaux)) == len(niveaux),
+                "zones"               : zones,
+                "taux_zone_dominante" : round(taux_zone_dom, 2),
+                "age_moyen"           : round(statistics.mean(ages), 1) if ages else None,
+                "ecart_type_age"      : round(statistics.stdev(ages), 1) if len(ages) > 1 else 0,
+                "collision_famille"   : len(familles) != len(set(familles)),
+                "cout_poule"          : round(self._cout_poule(poule), 2),
+            }
+        rapport["score_global"] = round(self.score_global(), 2)
+        rapport["nb_swaps"]     = self._nb_swaps
+        return rapport
 
-   
+    def afficher_resultat(self) -> None:
+        print("=" * 62)
+        print("  RÉSULTAT DE L'ALLOCATION")
+        print("=" * 62)
+
+        for i, poule in enumerate(self.poules, start=1):  # ← index à la place de poule.id
+            label = poule.name if poule.name else f"Poule {i}"
+            print(f"\n📋 {label}  ({poule.taille}/{poule.capacite} joueurs)")
+            print(f"   {'Joueur':<26} {'Niv':>4} {'Zone':>5} {'Âge':>5}  Famille")
+            print(f"   {'-'*57}")
+            for j in sorted(poule.joueurs, key=lambda x: x.niveau):
+                print(f"   {j.prenom+' '+j.nom:<26} {j.niveau:>4} {j.zone:>5}"
+                    f" {j.age:>5}  {j.nom_famille}")
+            print(f"   → Coût poule : {self._cout_poule(poule):.1f}")
+
+        diag = self.diagnostics()
+        print(f"\n{'='*62}")
+        print(f"  Score global : {diag['score_global']}"
+            f"  |  Swaps effectués : {diag['nb_swaps']}")
+        print("=" * 62)
+
+        for i, poule in enumerate(self.poules, start=1):
+            cle = poule.name if poule.name else f"Poule_{i}"
+            d   = diag[cle]
+            if d["collision_famille"]:
+                print(f"⚠️  {cle} : collision de famille détectée !")
+            if not d["niveaux_uniques"]:
+                print(f"⚠️  {cle} : doublons de niveau (inévitable si > 5 joueurs).")
+    
+ 
