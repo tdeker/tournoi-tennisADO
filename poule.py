@@ -271,9 +271,10 @@ class AllocationJoueur:
                 f"Trop de joueurs ({len(joueurs)}) "
                 f"pour la capacité totale des poules ({capacite_totale})."
             )
-        self.poules  = [deepcopy(p) for p in poules]
-        self.joueurs = list(joueurs)
-        self._nb_swaps = 0
+       # self.poules  = [deepcopy(p) for p in poules] #    a faire si je ne fveux pas que l'objets Poule soit modifier en déhors de l'objet AllocationJoueur
+       self.poules= poules
+       self.joueurs = list(joueurs)
+       self._nb_swaps = 0
  
     # ─────────────────────────────────────────
     #  Calcul de coût (sur liste de référence)

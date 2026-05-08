@@ -99,7 +99,10 @@ if __name__ == "__main__":
       maConfigurationPoule = PoolConfigurationGeneratorByTristan(nbInscris,1)
       print(f'nombre de gagnant par poule:{maConfigurationPoule.get_winners_per_pool()}')
       print(maConfigurationPoule.get_pool_sizes_list())
-      mesMatchsDePoules = AllocationJoueur(poules=maConfigurationPoule.poules, joueurs=maListeDeJoueurCourante)
+      mesPoules = maConfigurationPoule.poules
+      ## la il faut que j'attribue le nom à achque poule et que je m'assure que le nombre de gagnat est cohérent
+      
+      mesMatchsDePoules = AllocationJoueur(poules= mesPoules, joueurs=maListeDeJoueurCourante)
       mesMatchsDePoules.allouer()
       #mesMatchsDeP©oules = RepartiteurPoulesFixes(maListeDeJoueurCourante, maConfigurationPoule,monSexeCourant)
       #mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurCourante)
