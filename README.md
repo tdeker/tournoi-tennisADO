@@ -1,6 +1,6 @@
-# tournoi-tennisADO
-# POur la configuration des poules, prévoir des poul de 4 ou 5 si possibles
-# refaire l'algo de poul epouravoir uniquement des poules de 4 et 5 joueurs -- impossible pour 11
+## tournoi-tennisADO
+Pour la configuration des poules, prévoir des poul de 4 ou 5 si possibles
+refaire l'algo de poul epouravoir uniquement des poules de 4 et 5 joueurs -- impossible pour 11
 
 def decomp_max_a(n):
     """
@@ -16,9 +16,13 @@ def decomp_max_a(n):
         return a, b
     return None
 
-# Exemples
+## Exemples
 for n in range(10, 100):
     print(n, "->", decomp_max_a(n))
 
-# 25/01
+## 25/01
 l'algo de création de Poule qui maximise les poules de 4 est correcte, après est ce que cela est vraiment opprotun de faire des poules de 4 mettre peut un paramètre pour maximiser les nombrede poules de 5
+## 8/05
+changement de l'algorithme d'allocation des joueurs dans les poules avec les nouvelles demandes de l'équipe Tennis
+A faire: gérer les tête de série lors du chargement des données dans l'objet Joueurs et supprimer les tetes de série de l'allocation des poules
+problème sur la création des poules: le nombre de gagnant est mal répartie et les poules ne sont pas nomées

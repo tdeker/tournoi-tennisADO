@@ -208,9 +208,6 @@ def creer_nouvelle_liste_joueur_dans_airtable(nbInscris, nbSeed,AIRTABLE_TOKEN,B
     monApiAT = Api(AIRTABLE_TOKEN)   
     tableJoueur = monApiAT.table(BASE_ID, "Joueur")
     maListeDeJoueurs = creation_joueurs_avec_nom_famille(nbInscris,nbSeed) 
-    for j in maListeDeJoueurs:
-        print(j)  
-    
     frecords_existants = tableJoueur.all()
     ids_a_supprimer = [record["id"] for record in frecords_existants]
     if ids_a_supprimer:
