@@ -1,7 +1,14 @@
 from pyairtable import Api
 from joueur import *
-AIRTABLE_TOKEN = "patUgWdyAOP4lcUeb.5e64ecf450526591dc36b6a3c9dda130d159082384430efde4140dbd16c3cbaa"  # ton vrai token complet
-BASE_ID = "appIRSMg6tqFzeMr5"
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # utile en local, ignoré sur Railway
+
+#AIRTABLE_TOKEN = "patUgWdyAOP4lcUeb.5e64ecf450526591dc36b6a3c9dda130d159082384430efde4140dbd16c3cbaa"  # ton vrai token complet # mettre dans une variable d'environnement
+#BASE_ID = "appIRSMg6tqFzeMr5"
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+BASE_ID = os.getenv("BASE_ID")
 
 api = Api(AIRTABLE_TOKEN)
 

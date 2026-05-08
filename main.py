@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
 
 
-
+## tester la répartition avec la liste des joueurs de 2025 pour voir si OK
 ## selectionner les gagnants au hasard pour chaque poule
 ## créer le tableau pour le premier tour 
 ## crééer le tableau pour la consolante (avec joueurs by)
