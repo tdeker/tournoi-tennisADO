@@ -141,24 +141,26 @@ class Poule:
         return any(j.nom_famille == joueur.nom_famille for j in self.joueurs)
    
 class PoolConfigurationGeneratorByTristan:
-    def __init__(self, nb_joueur: int, nb_console: int = 1):
+    def __init__(self, nb_joueur: int, nb_console: int = 1, sexe: str = "M"):
         self.nb_joueurs = nb_joueur
         self.nb_console=nb_console
         self.nb_joueur_poules = self.nb_joueurs - self.nb_console
         self.poules = self.__creation_poules_vides() #création de la liste de poule vide
-    def nb_poule(self) -> int:  
-        if self.nb_joueurs < 1:
-            raise ValueError("n doit être >= 1")    
-        return len(self.poules)
-    def nb_gagnant(self) -> int: #attention il faut au moins 1 gagnant par poule, donc le nombre de gagnant doit être supérieur aux nombres de poules
-        if self.nb_joueurs < 1:
-          raise ValueError("n doit être >= 1")
-        return 1 << (self.nb_joueurs.bit_length() - 1)  # équivalent à 2**floor(log2(n))
-    def matches_in_pool(self, n):
-        return n * (n - 1) // 2
-    def display_poules(self) -> None:
-        for i,poule in enumerate(self.poules, start=1):
-            print(f'Poule {i}: {poule.nbJoueursPoule()} joueurs')
+        ## nommage des poules et répartition des gagnants
+        self.__nommage_poules()
+        self.__repartition_gagnants() # à faire en fonction du sexe et du nombre de gagnants par poule
+
+    def __repartition_gagnants(self) :
+       return self.nb_gagnant
+
+    def __nommage_poules(self) :
+        for p,i in enumerate(self.poules, start=1):
+            if self.sexe == "F":
+                p.name= NOMS_POULES_LEGENDES_FEMMES[i]
+            else:
+                p.name= NOMS_POULES_LEGENDES_HOMMES[i]
+        return self.poules # a effacer non nécessaire
+
     def __creation_poules_vides(self) -> List[Poule]:
         """
         Retourne (a, b) maximisant a tel que n = 4a + 5b, a,b entiers >= 0.
@@ -271,10 +273,10 @@ class AllocationJoueur:
                 f"Trop de joueurs ({len(joueurs)}) "
                 f"pour la capacité totale des poules ({capacite_totale})."
             )
-       # self.poules  = [deepcopy(p) for p in poules] #    a faire si je ne fveux pas que l'objets Poule soit modifier en déhors de l'objet AllocationJoueur
-       self.poules= poules
-       self.joueurs = list(joueurs)
-       self._nb_swaps = 0
+        #self.poules  = [deepcopy(p) for p in poules] #    a faire si je ne fveux pas que l'objets Poule soit modifier en déhors de l'objet AllocationJoueur
+        self.poules= poules
+        self.joueurs = list(joueurs)
+        self._nb_swaps = 0
  
     # ─────────────────────────────────────────
     #  Calcul de coût (sur liste de référence)
