@@ -64,16 +64,17 @@ if __name__ == "__main__":
         for record in records:
             f = record["fields"]
             joueur = Joueur(
-                prenom         = f.get("Prénom", ""),
-                nom            = f.get("Nom", ""),
-                sexe           = f.get("Sexe", "M"),
-                age            = f.get("Age", 0),
-                niveau         = int(f.get("Niveau")) if f.get("Niveau") is not None else None,
-                zone           = int(f.get("Zone")) if f.get("Zone") is not None else None,
-                tete_de_serie   = f.get("Seed", False)
+                prenom       = f.get("Prénom", ""),
+                nom          = f.get("Nom", ""),
+                sexe         = f.get("Sexe", "M"),
+                age          = f.get("Age", 0),
+                niveau       = int(f.get("Niveau")) if f.get("Niveau") is not None else None,
+                zone         = int(f.get("Zone"))   if f.get("Zone")   is not None else None,
+                tete_de_serie = f.get("Seed", False)
             )
+            joueur.airtable_id = record["id"]   # on stocke l'ID AT directement sur l'objet
             joueurs.append(joueur)
-        return joueurs   
+        return joueurs
 
     maListeDeJoueurs = records_to_joueurs(records)
     maListeDeJoueursFeminin: List[Joueur] = []
@@ -94,40 +95,42 @@ if __name__ == "__main__":
       else :
        maListeDeJoueursMasculin.append(joueurCourant)
 
+
+
     for monSexeCourant, maListeDeJoueurCourante in zip(["F", "M"], [maListeDeJoueursFeminin, maListeDeJoueursMasculin]):
-      nbInscris=len(maListeDeJoueurCourante)
-      maConfigurationPoule = PoolConfigurationGeneratorByTristan(nbInscris,1)
-      print(f'nombre de gagnant par poule:{maConfigurationPoule.get_winners_per_pool()}')
-      print(maConfigurationPoule.get_pool_sizes_list())
-      mesPoules = maConfigurationPoule.poules
-      ## la il faut que j'attribue le nom à achque poule et que je m'assure que le nombre de gagnat est cohérent
-      
-      mesMatchsDePoules = AllocationJoueur(poules= mesPoules, joueurs=maListeDeJoueurCourante)
-      mesMatchsDePoules.allouer()
-      #mesMatchsDeP©oules = RepartiteurPoulesFixes(maListeDeJoueurCourante, maConfigurationPoule,monSexeCourant)
-      #mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurCourante)
-      mesMatchsDePoules.afficher_resultat()
+        nbInscris = len(maListeDeJoueurCourante)
+        maConfigurationPoule = CreationPoules(nbInscris, 1, monSexeCourant)  # bug 1
+        print(f'nombre de gagnant par poule: {maConfigurationPoule.get_winners_per_pool()}')
+        print(maConfigurationPoule.get_pool_sizes())                               # bug 2
+        mesPoules = maConfigurationPoule.poules
+        mesMatchsDePoules = AllocationJoueur(poules=mesPoules, joueurs=maListeDeJoueurCourante)
+        mesMatchsDePoules.allouer()
+        mesMatchsDePoules.afficher_resultat()
 
-    ### Provisionning des Poules dans Airtable
+    # Provisioning Airtable
+    for unePoule in mesMatchsDePoules.poules:
+        print(f'Building Poule {unePoule.name}')
 
-    #### Provisionning des poules des joueurs dans les poules
-      for i, unePoule in enumerate(mesMatchsDePoules.poules, start=0):
-          print(f'Building Poule {unePoule.name}')
-          tablePoule.create({
-              "Nom" : str(unePoule.name),
-              "nb_gagnant" : int(unePoule.nb_gagnant),
-              "nb_joueurs" : int(unePoule.nb_joueurs),
-              "lieu" : str(unePoule.lieu),
-          })
-          for unJoueur in unePoule.getJoueurs():
-            records = tableJoueur.all(formula=f"{{codejoueur}}='{unJoueur.id}'")
-            if not records:
-                raise ValueError(f"Joueur introuvable : {unJoueur.id}")
+        poule_record = tablePoule.create({           # bug 4 : on garde l'ID retourné
+            "Nom":        str(unePoule.name),
+            "nb_gagnant": int(unePoule.nb_gagnant),
+            "nb_joueurs": int(unePoule.nb_joueurs),
+            "lieu":       str(unePoule.lieu),
+        })
+        poule_at_id = poule_record["id"]
+
+        for unJoueur in unePoule.getJoueurs():
+            # bug 5 : recherche par airtable_id stocké à l'import
+            joueur_records = tableJoueur.all(
+                formula=f"{{codejoueur}}='{unJoueur.airtable_id}'"
+            )
+            if not joueur_records:
+                raise ValueError(f"Joueur introuvable en AT : {unJoueur.prenom} {unJoueur.nom}")
+
             tablePoule_Joueur.create({
-              "Poule" : str(unePoule.name),
-              "CodeJoueur" : [records[0]["id"]]
-          })
-
+                "Poule":       [poule_at_id],             # linked record → liste d'IDs
+                "CodeJoueur":  [joueur_records[0]["id"]]
+            })
 
 
 ## tester la répartition avec la liste des joueurs de 2025 pour voir si OK

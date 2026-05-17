@@ -59,10 +59,13 @@ class Poule:
         self.nb_console = nb_console
 
     def definirNbGagnantsPoule(self, nb_gagnant: int) -> None:
-        if nb_gagnant < 0:
-            raise ValueError("Le nombre de gagnants ne peut pas être négatif")
-        if nb_gagnant > self.nb_joueurs:
-            raise ValueError("Le nombre de gagnants ne peut pas dépasser la taille de la poule")
+        if nb_gagnant < 1:
+            raise ValueError("Il faut au moins 1 gagnant par poule")
+        if nb_gagnant >= self.nb_joueurs:   # >= au lieu de >
+            raise ValueError(
+                f"Il faut au moins 1 éliminé : nb_gagnant ({nb_gagnant}) "
+                f"doit être < capacité ({self.nb_joueurs})"
+            )
         self.nb_gagnant = nb_gagnant
 
     def ajouterJoueur(self, joueur: Joueur) -> bool:
@@ -140,108 +143,119 @@ class Poule:
     def a_meme_famille(self, joueur: Joueur) -> bool:
         return any(j.nom_famille == joueur.nom_famille for j in self.joueurs)
    
-class PoolConfigurationGeneratorByTristan:
+class CreationPoules:
     def __init__(self, nb_joueur: int, nb_console: int = 1, sexe: str = "M"):
         self.nb_joueurs = nb_joueur
-        self.nb_console=nb_console
-        self.nb_joueur_poules = self.nb_joueurs - self.nb_console
-        self.poules = self.__creation_poules_vides() #création de la liste de poule vide
-        ## nommage des poules et répartition des gagnants
-        self.__nommage_poules()
-        self.__repartition_gagnants() # à faire en fonction du sexe et du nombre de gagnants par poule
+        self.nb_console = nb_console
+        self.sexe       = sexe
 
-    def __repartition_gagnants(self) :
-       return self.nb_gagnant
+        self.poules: List[Poule] = self._creation_poules_vides()
+        self._nommage_poules()
+        self._assigner_gagnants()   # ← méthode claire, appelée une seule fois
 
-    def __nommage_poules(self) :
-        for p,i in enumerate(self.poules, start=1):
-            if self.sexe == "F":
-                p.name= NOMS_POULES_LEGENDES_FEMMES[i]
-            else:
-                p.name= NOMS_POULES_LEGENDES_HOMMES[i]
-        return self.poules # a effacer non nécessaire
+    # ─────────────────────────────────────────
+    #  Création des poules
+    # ─────────────────────────────────────────
 
-    def __creation_poules_vides(self) -> List[Poule]:
-        """
-        Retourne (a, b) maximisant a tel que n = 4a + 5b, a,b entiers >= 0.
-        Renvoie None s'il n'y a pas de solution.
-        a est le nombre de poules de 4 joueurs et b est le nombre de poules de 5 joueurs
-        le seule cas qui ne fonctionne pas est le nombre de joueurs = 11, c'est le nombre de 
-        """
-        n=self.nb_joueurs
-        if n==11:
-             # pas de solution (ex: n = 11) * proposer une solution avec des poules de 3 joueurs
-            a=2
-            b=0
-            c=1
-        else :
-            b = n % 4              # plus petit b compatible (b ≡ n mod 4)
-            a_num = n - 5 * b
-            a = a_num // 4
-            c=0
- 
-        #création de la liste des poules possibles
-        liste_poules = []
-        for i in range(a):
-            p=Poule(4)
-            liste_poules.append(p)
-        for i in range(b):
-            p=Poule(5)
-            liste_poules.append(p)
-        for i in range(c):
-            p=Poule(3)
-            liste_poules.append(p)
-        return liste_poules
+    def _creation_poules_vides(self) -> List[Poule]:
+        n = self.nb_joueurs
+        a, b, c = 0, 0, 0
 
-        return None
-    def get_pool_sizes_list (self) -> List[int]:
-        """
-        Retourne la liste des tailles de toutes les poules pour le nombre de joueurs inscrits.
-        """
-        myPools =self.__creation_poules_vides()
-        return [p.taillePoule() for p in myPools]
+        if n == 11:
+            a, b, c = 2, 0, 1
+        else:
+            # Cherche b dans 0..n//5 tel que (n - 5b) % 4 == 0
+            trouve = False
+            for b_candidat in range(n // 5 + 1):
+                reste = n - 5 * b_candidat
+                if reste >= 0 and reste % 4 == 0:
+                    a = reste // 4
+                    b = b_candidat
+                    trouve = True
+                    break
+            if not trouve:
+                raise ValueError(f"Impossible de décomposer {n} en poules de 4 et 5.")
 
-    def get_winners_per_pool(self) -> List[int]:
+        poules = []
+        for _ in range(a):
+            poules.append(Poule(4))
+        for _ in range(b):
+            poules.append(Poule(5))
+        for _ in range(c):
+            poules.append(Poule(3))
+        return poules
+
+    # ─────────────────────────────────────────
+    #  Nommage
+    # ─────────────────────────────────────────
+
+    def _nommage_poules(self) -> None:
+        noms = NOMS_POULES_LEGENDES_FEMMES if self.sexe == "F" else NOMS_POULES_LEGENDES_HOMMES
+        for i, p in enumerate(self.poules, start=1):
+            p.name = noms[i]
+
+    # ─────────────────────────────────────────
+    #  Calcul et assignation des gagnants
+    # ─────────────────────────────────────────
+    def _nb_qualifies_cible(self) -> int:
         """
-        Distribue les places en priorité absolue aux plus grandes poules.
-        Ordre de priorité : Poules de 5 > Poules de 4 > Poules de 3.
+        Plus grande puissance de 2 réalisable :
+        - ≤ nb_joueurs  (bracket standard)
+        - ≤ somme(capacité_poule - 1)  (au moins 1 éliminé par poule)
         """
-        total_poules = self.nb_poule()
+        if self.nb_joueurs < 1:
+            raise ValueError("nb_joueurs doit être >= 1")
+
+        max_qualifies = sum(p.nb_joueurs - 1 for p in self.poules)
+        puissance = 1 << (self.nb_joueurs.bit_length() - 1)  # ≤ n
+
+        # On descend jusqu'à trouver une puissance de 2 réalisable
+        while puissance > max_qualifies:
+            puissance >>= 1
+
+        if puissance < 1:
+            raise ValueError("Impossible de former un bracket avec cette configuration.")
+        return puissance
+
+
+    def _assigner_gagnants(self) -> None:
+        total_poules = len(self.poules)
         if total_poules == 0:
-            return []
+            return
 
-        # 1. Calcul de la cible (ex: 16 qualifiés)
-        # Assurez-vous que cette méthode existe et renvoie bien une puissance de 2
-        cible_qualifies = self.nb_gagnant()
-        
-        # 2. Distribution de base
-        nb_base = cible_qualifies // total_poules
-        reste = cible_qualifies % total_poules
-        
-        # 3. Initialisation de la liste des résultats avec la base
-        # On crée une liste de résultats alignée sur l'ordre actuel de self.poules
-        resultats = [nb_base] * total_poules
+        cible   = self._nb_qualifies_cible()
+        nb_base = cible // total_poules
+        reste   = cible % total_poules
 
-        # 4. TRI DE PRIORITÉ
-        # On récupère les indices des poules, mais on les trie par la taille de la poule associée
-        # reverse=True permet d'avoir les 5 en premier, puis les 4, puis les 3
-        indices_prioritaires = sorted(
-            range(total_poules), 
-            key=lambda i: self.poules[i].nbJoueursPoule(), 
+        indices_par_priorite = sorted(
+            range(total_poules),
+            key=lambda i: self.poules[i].taillePoule(),
             reverse=True
         )
-        
-        # 5. Distribution du reste (les points bonus)
-        # On parcourt les indices dans l'ordre de priorité (les plus grandes poules d'abord)
+
+        gagnants = [nb_base] * total_poules
+
+        # Distribution du reste aux plus grandes poules
         for i in range(reste):
-            idx = indices_prioritaires[i]
-            resultats[idx] += 1
+            gagnants[indices_par_priorite[i]] += 1
+
+        # Sécurité : on plafonne à capacité - 1 (au moins 1 éliminé garanti)
+        for i, nb in enumerate(gagnants):
+            nb_corrige = min(nb, self.poules[i].taillePoule() - 1)
+            nb_corrige = max(nb_corrige, 1)   # au moins 1 qualifié
+            self.poules[i].definirNbGagnantsPoule(nb_corrige)
             
-        # 6. Mise à jour interne des objets
-        for i, nb in enumerate(resultats):
-            self.poules[i].nb_gagnant = nb
-            
-        return resultats
+    # ─────────────────────────────────────────
+    #  API publique
+    # ─────────────────────────────────────────
+
+    def get_pool_sizes(self) -> List[int]:
+        """Taille (capacité) de chaque poule."""
+        return [p.taillePoule() for p in self.poules]
+
+    def get_winners_per_pool(self) -> List[int]:
+        """Nombre de qualifiés par poule (dans l'ordre de self.poules)."""
+        return [p.nbGagnantsPoule() for p in self.poules]
 
 class AllocationJoueur:
     """
