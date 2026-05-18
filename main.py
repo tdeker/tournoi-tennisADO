@@ -70,9 +70,9 @@ if __name__ == "__main__":
                 age          = f.get("Age", 0),
                 niveau       = int(f.get("Niveau")) if f.get("Niveau") is not None else None,
                 zone         = int(f.get("Zone"))   if f.get("Zone")   is not None else None,
-                tete_de_serie = f.get("Seed", False)
+                tete_de_serie = f.get("Seed", False),
+                id           = f.get("CodeJoueur", "")
             )
-            joueur.airtable_id = record["id"]   # on stocke l'ID AT directement sur l'objet
             joueurs.append(joueur)
         return joueurs
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         for unJoueur in unePoule.getJoueurs():
             # bug 5 : recherche par airtable_id stocké à l'import
             joueur_records = tableJoueur.all(
-                formula=f"{{codejoueur}}='{unJoueur.airtable_id}'"
+                formula=f"{{codejoueur}}='{unJoueur.id}'"
             )
             if not joueur_records:
                 raise ValueError(f"Joueur introuvable en AT : {unJoueur.prenom} {unJoueur.nom}")
