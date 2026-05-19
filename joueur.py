@@ -18,8 +18,8 @@ class Joueur:
     niveau:        int                  # 1 à 5  (5 = meilleur)
     zone:          int                  # 1 à 5
     tete_de_serie: bool = False
-    nom_famille:   str  = field(init=False)  # calculé automatiquement
     id:          str  = field(init=False)  # calculé automatiqu
+    nom_famille:   str  = field(init=False)  # calculé automatiquement
     def __post_init__(self):
         # Champs calculés (pas passés en paramètre)
         self.nom_famille = self.nom

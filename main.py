@@ -71,12 +71,13 @@ if __name__ == "__main__":
                 niveau       = int(f.get("Niveau")) if f.get("Niveau") is not None else None,
                 zone         = int(f.get("Zone"))   if f.get("Zone")   is not None else None,
                 tete_de_serie = f.get("Seed", False),
-                id           = f.get("CodeJoueur", "")
             )
+            joueur.airtable_id = f.get("Code", "")  # on stocke l'ID AT directement sur l'objet
             joueurs.append(joueur)
         return joueurs
-
+    
     maListeDeJoueurs = records_to_joueurs(records)
+  
     maListeDeJoueursFeminin: List[Joueur] = []
     maListeDeJoueursMasculin: List[Joueur] = []
    ### Effacer les poules créées précédement
@@ -106,6 +107,23 @@ if __name__ == "__main__":
         mesMatchsDePoules = AllocationJoueur(poules=mesPoules, joueurs=maListeDeJoueurCourante)
         mesMatchsDePoules.allouer()
         mesMatchsDePoules.afficher_resultat()
+        for i, unePoule in enumerate(mesMatchsDePoules.poules, start=0):
+                print(f'Building Poule {unePoule.name}')
+                tablePoule.create({
+                    "Nom" : str(unePoule.name),
+                    "nb_gagnant" : int(unePoule.nb_gagnant),
+                    "nb_joueurs" : int(unePoule.nb_joueurs),
+                    "lieu" : str(unePoule.lieu),
+                })
+                for unJoueur in unePoule.getJoueurs():
+                    records = tableJoueur.all(formula=f"{{codejoueur}}='{unJoueur.id}'")
+                    if not records:
+                        raise ValueError(f"Joueur introuvable : {unJoueur.id}")
+                    tablePoule_Joueur.create({
+                    "Poule" : str(unePoule.name),
+                    "CodeJoueur" : [records[0]["id"]]
+                })
+    exit()
 
     # Provisioning Airtable
     for unePoule in mesMatchsDePoules.poules:
