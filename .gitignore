@@ -21,3 +21,7 @@ Thumbs.db
 ADO bracket generator.py
 
 *.log
+
+# fichiers divers
+ressources/
+frontend-admin/
