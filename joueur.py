@@ -17,17 +17,17 @@ class Joueur:
     age:           int
     niveau:        int                  # 1 à 5  (5 = meilleur)
     zone:          int                  # 1 à 5
+    id:            str  # = field(init=False)  
     tete_de_serie: bool = False
-    id:          str  = field(init=False)  # calculé automatiqu
     nom_famille:   str  = field(init=False)  # calculé automatiquement
     def __post_init__(self):
         # Champs calculés (pas passés en paramètre)
         self.nom_famille = self.nom
-        self.id        = generate_player_id(self.prenom, self.nom)
+        #self.id        = generate_player_id(self.prenom, self.nom) # pour le moment je ne génère pas de code joueur
 
         # Validations
         assert 1 <= self.niveau <= 5,  f"Niveau invalide : {self.niveau}"
-        assert 1 <= self.zone   <= 4,  f"Zone invalide : {self.zone}"
+        assert 1 <= self.zone   <= 5,  f"Zone invalide : {self.zone}"
         assert self.age > 0,           f"Âge invalide : {self.age}"
 
     def __repr__(self):

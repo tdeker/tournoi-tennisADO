@@ -256,6 +256,9 @@ class CreationPoules:
     def get_winners_per_pool(self) -> List[int]:
         """Nombre de qualifiés par poule (dans l'ordre de self.poules)."""
         return [p.nbGagnantsPoule() for p in self.poules]
+    def get_pool_sizes_and_winners(self) -> List[Tuple[int, int]]:
+        """Taille (capacité) et nombre de qualifiés par poule (dans l'ordre de self.poules)."""
+        return [(p.taillePoule(), p.nbGagnantsPoule()) for p in self.poules]
 
 class AllocationJoueur:
     """
