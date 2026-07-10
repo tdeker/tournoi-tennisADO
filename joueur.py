@@ -1,34 +1,61 @@
 from collections import defaultdict, Counter
 import random
+from dataclasses import dataclass, field
+from typing import Literal
 from faker import Faker
 from typing import List, Dict, Tuple, Optional, Literal
 from utiles import *
+from dataclasses import dataclass, field
+from typing import Literal
 
 
+@dataclass
 class Joueur:
-    def __init__(self, name: str, familyName,  sexe: Literal["M", "F"],age: int,niveau: int, seededPlayer: bool):
-        self.prenom = name
-        self.nom = familyName
-        self.tete_de_serie = seededPlayer
-        self.age = age
-        self.niveau = niveau
-        self.sexe =sexe
-        self.code = generate_player_id(self.prenom,self.nom)
+    prenom:        str
+    nom:           str
+    sexe:          Literal["M", "F"]
+    age:           int
+    niveau:        int                  # 1 à 5  (5 = meilleur)
+    zone:          int                  # 1 à 5
+    id:            str  # = field(init=False)  
+    tete_de_serie: bool = False
+    nom_famille:   str  = field(init=False)  # calculé automatiquement
+    def __post_init__(self):
+        # Champs calculés (pas passés en paramètre)
+        self.nom_famille = self.nom
+        #self.id        = generate_player_id(self.prenom, self.nom) # pour le moment je ne génère pas de code joueur
+
+        # Validations
+        assert 1 <= self.niveau <= 5,  f"Niveau invalide : {self.niveau}"
+        assert 1 <= self.zone   <= 5,  f"Zone invalide : {self.zone}"
+        assert self.age > 0,           f"Âge invalide : {self.age}"
+
     def __repr__(self):
-        return f"{self.prenom} {self.nom} (N{self.niveau})"
+        return f"{self.prenom} {self.nom} (N{self.niveau} Z{self.zone}, {self.age} ans)"
 
 
-# A supprimer
-class Old_Joueur: 
-    def __init__(self, nom: str, prenom: str, niveau: int):
-        self.nom = nom
-        self.prenom = prenom
-        self.niveau = niveau
-        self.nom_famille = nom.split()[0] if ' ' in nom else nom
-    
-    def __repr__(self):
-        return f"{self.prenom} {self.nom} (N{self.niveau})"
+def generate_player_id(first_name: str, last_name: str, existing_ids: set = None) -> str:
+    """
+    Génère un code joueur basé sur le hash MD5 du nom et prénom.
+    Format : J-XXXX (4 caractères hex en majuscules)
+    Gère les collisions (homonymes) avec un suffixe numérique.
+    """
+    if existing_ids is None:
+        existing_ids = set()
 
+    # Hash MD5 du nom+prénom en minuscules (insensible à la casse)
+    raw = f"{first_name.lower()}{last_name.lower()}"
+    hash_hex = hashlib.md5(raw.encode()).hexdigest()
+    base_code = f"J-{hash_hex[:4].upper()}"
+
+    # Gestion des collisions
+    code = base_code
+    suffix = 1
+    while code in existing_ids:
+        code = f"{base_code}-{suffix}"
+        suffix += 1
+
+    return code
 def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> List[Joueur]:
     """
     Génère automatiquement une liste de joueurs avec possibilité d'avoir des familles.
@@ -73,12 +100,15 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
     # Créer les joueurs de familles
     for i, nom_famille in enumerate(noms_familles):
         sexe = fake.random_element(["M", "F"])
+        age = random.randint(7, 17)
+        zone = random.randint(1, 4)
         if sexe == "M":
             prenom = fake.first_name_male()   # ← prénom masculin garanti
         else:
             prenom = fake.first_name_female() # ← prénom féminin garant
-        age = random.randint(7, 17)
         
+       
+
         # Déterminer si c'est une tête de série
         is_seeded = i < nb_seededPlayer
         
@@ -89,7 +119,7 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
             # Distribution pondérée favorisant les bas niveaux (1, 2, 3)
             niveau = random.choices(niveaux_choix, weights=niveaux_poids)[0]
         
-        joueur = Joueur(prenom, nom_famille,sexe, age, niveau, is_seeded)
+        joueur = Joueur(prenom, nom_famille,sexe, age, niveau,zone, is_seeded)
         joueurs.append(joueur)
     
     # Créer les joueurs restants (noms uniques)
@@ -105,13 +135,15 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
             prenom = fake.first_name_female() # ← prénom féminin garanti
         age = random.randint(7, 17)
         niveau = random.choices([3, 4, 5], weights=[30, 40, 30])[0]
-        joueur = Joueur(prenom,nom,sexe, age, niveau, True)
+        zone = random.randint(1, 4)
+        joueur = Joueur(prenom,nom,sexe, age, niveau,zone, True)
         joueurs.append(joueur)
     
     # Créer les joueurs non têtes de série restants
     nb_non_seeded_restants = nb_joueurs_uniques - nb_seeded_restants
     for i in range(nb_non_seeded_restants):
         sexe = fake.random_element(["M", "F"])
+        zone = random.randint(1, 4)
         nom=fake.last_name()
         if sexe == "M":
             prenom = fake.first_name_male()   # ← prénom masculin garanti
@@ -119,7 +151,7 @@ def creation_joueurs_avec_nom_famille(nb_inscris: int, nb_seededPlayer: int) -> 
             prenom = fake.first_name_female() # ← prénom féminin garanti
         age = random.randint(7, 17)
         niveau = random.choices(niveaux_choix, weights=niveaux_poids)[0]
-        joueur = Joueur(prenom,nom,sexe, age, niveau, False)
+        joueur = Joueur(prenom,nom,sexe, age, niveau,zone, False)
         joueurs.append(joueur)
     
     # Mélanger la liste pour avoir un ordre aléatoire
@@ -172,5 +204,28 @@ def creation_joueurs(nb_inscris: int, nb_seededPlayer: int) -> List[Joueur]:
     random.shuffle(joueurs)
     
     return joueurs
+def creer_nouvelle_liste_joueur_dans_airtable(nbInscris, nbSeed,AIRTABLE_TOKEN,BASE_ID) :
+    monApiAT = Api(AIRTABLE_TOKEN)   
+    tableJoueur = monApiAT.table(BASE_ID, "Joueur")
+    maListeDeJoueurs = creation_joueurs_avec_nom_famille(nbInscris,nbSeed) 
+    frecords_existants = tableJoueur.all()
+    ids_a_supprimer = [record["id"] for record in frecords_existants]
+    if ids_a_supprimer:
+     tableJoueur.batch_delete(ids_a_supprimer)
+
+    # 2. Création des nouveaux joueurs
+    tableJoueur.batch_create([
+      {
+        "Nom"         : str(monJoueur.nom),
+        "Prénom"      : str(monJoueur.prenom),
+        "Sexe"        : str(monJoueur.sexe),
+        "Niveau"      : str(monJoueur.niveau),
+        "Age"         : int(monJoueur.age),
+        "Seed"        : bool(monJoueur.tete_de_serie),
+        "Zone"        : str(monJoueur.zone),
+        "CodeJoueur"  : str(monJoueur.id)
+    }
+     for monJoueur in maListeDeJoueurs
+    ])
 
 

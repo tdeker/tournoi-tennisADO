@@ -6,88 +6,128 @@ from dotenv import load_dotenv
 import os
 from pyairtable import Api
 import hashlib
-
-
+import json
+import requests
 
 if __name__ == "__main__":
-## Récupération des joueurs depuis Airtable
+
     load_dotenv()  # charge le fichier .env
     AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
     BASE_ID        = os.getenv("BASE_ID")
     monApiAT = Api(AIRTABLE_TOKEN)
     tableJoueur = monApiAT.table(BASE_ID, "Joueur")
-    tablePoule = monApiAT.table(BASE_ID,"Poule")
-    tablePoule_Joueur = monApiAT.table(BASE_ID,"Poule_Joueur")
+    tablePoule = monApiAT.table(BASE_ID, "Poule")
+    tablePoule_Joueur = monApiAT.table(BASE_ID, "Poule_Joueur")
 
     records = tableJoueur.all()
-    # Convertir en liste de Joueur
+
+    # Dictionnaire pour retrouver l'ID Airtable d'un joueur à partir de son CodeJoueur
+    # (évite de refaire un tableJoueur.all() à chaque joueur dans la boucle plus bas)
+    joueur_id_par_code = {
+        record["fields"].get("CodeJoueur"): record["id"]
+        for record in records
+        if record["fields"].get("CodeJoueur")
+    }
+
     def records_to_joueurs(records) -> list[Joueur]:
         joueurs = []
         for record in records:
             f = record["fields"]
             joueur = Joueur(
-                name         = f.get("Prénom", ""),
-                familyName   = f.get("Nom", ""),
-                sexe         = f.get("Sexe", "M"),
-                age          = f.get("Age", 0),
-                niveau       = int(f.get("Niveau")),
-                seededPlayer = f.get("Seed", False),
+                prenom        = f.get("Prénom", ""),
+                nom           = f.get("Nom", ""),
+                sexe          = f.get("Sexe", "M"),
+                age           = f.get("Age", 0),
+                niveau        = int(f.get("Niveau")) if f.get("Niveau") is not None else None,
+                zone          = int(f.get("Zone"))   if f.get("Zone")   is not None else None,
+                tete_de_serie = f.get("Seed", False),
+                id            = f.get("CodeJoueur", ""),
             )
             joueurs.append(joueur)
-        return joueurs   
+        return joueurs
 
     maListeDeJoueurs = records_to_joueurs(records)
-    maListeDeJoueursFeminin: List[Joueur] = []
-    maListeDeJoueursMasculin: List[Joueur] = []
-   ### Effacer les poules créées précédement
-    records = tablePoule.all()
-    ids = [record["id"] for record in records]
-    tablePoule.batch_delete(ids)
-    records = tablePoule_Joueur.all()
-    ids = [record["id"] for record in records]
-    tablePoule_Joueur.batch_delete(ids)
-   ### Création des poules
+
+    # Listes pour les poules : non têtes de série
+    feminin_poules:  List[Joueur] = []  # tous les joueurs non tête de série féminin
+    masculin_poules: List[Joueur] = []  # tous les joueurs non tête de série masculin
+    # Listes pour le tournoi principal : têtes de série
+    feminin_qualifies:  List[Joueur] = []
+    masculin_qualifies: List[Joueur] = []
+
     for joueurCourant in maListeDeJoueurs:
-      print(joueurCourant.prenom + " " + joueurCourant.nom + "-" + str(joueurCourant.niveau) + "-" + str(joueurCourant.age) + "-" + str(joueurCourant.tete_de_serie))  
-      if joueurCourant.sexe == "F" :
-       maListeDeJoueursFeminin.append(joueurCourant)
-      else :
-       maListeDeJoueursMasculin.append(joueurCourant)
+        if joueurCourant.sexe == "F":
+            if joueurCourant.tete_de_serie:
+                feminin_qualifies.append(joueurCourant)
+            else:
+                feminin_poules.append(joueurCourant)
+        else:  # "M"
+            if joueurCourant.tete_de_serie:
+                masculin_qualifies.append(joueurCourant)
+            else:
+                masculin_poules.append(joueurCourant)
 
-    for monSexeCourant, maListeDeJoueurCourante in zip(["F", "M"], [maListeDeJoueursFeminin, maListeDeJoueursMasculin]):
-      nbInscris=len(maListeDeJoueurCourante)
-      maConfigurationPoule = PoolConfigurationGeneratorByTristan(nbInscris,1)
-      print(f'nombre de gagnant par poule:{maConfigurationPoule.get_winners_per_pool()}')
-      print(maConfigurationPoule.get_pool_sizes_list())
-      mesMatchsDePoules = RepartiteurPoulesFixes(maListeDeJoueurCourante, maConfigurationPoule,monSexeCourant)
-      mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurCourante)
-      mesMatchsDePoules.afficher_resultats()
-    ### Provisionning des Poules dans Airtable
-    #### Provisionning des poules des joueurs dans les poules
-      for i, unePoule in enumerate(mesMatchsDePoules.get_Poules(), start=0):
-          print(f'Building Poule {unePoule.name}')
-          tablePoule.create({
-              "Nom" : str(unePoule.name),
-              "nb_gagnant" : int(mesMatchsDePoules.nb_gagnants[i]),
-              "nb_joueurs" : int(unePoule.nb_joueurs),
-              "lieu" : str(unePoule.lieu),
-          })
-          for unJoueur in unePoule.getJoueurs():
-            records = tableJoueur.all(formula=f"{{codejoueur}}='{unJoueur.code}'")
-            if not records:
-                raise ValueError(f"Joueur introuvable : {unJoueur.code}")
-            tablePoule_Joueur.create({
-              "Poule" : str(unePoule.name),
-              "CodeJoueur" : [records[0]["id"]]
-          })
+    print(f"Féminines non têtes de série : {len(feminin_poules)}")
+    print(f"Féminines têtes de série     : {len(feminin_qualifies)}")
+    print(f"Masculins non têtes de série : {len(masculin_poules)}")
+    print(f"Masculins têtes de série     : {len(masculin_qualifies)}")
+
+    ### Effacer les poules créées précédemment
+    records_poule = tablePoule.all()
+    ids = [record["id"] for record in records_poule]
+    if ids:
+        tablePoule.batch_delete(ids)
+
+    records_poule_joueur = tablePoule_Joueur.all()
+    ids = [record["id"] for record in records_poule_joueur]
+    if ids:
+        tablePoule_Joueur.batch_delete(ids)
+
+    for monSexeCourant, maListeDeJoueurCourante in zip(["F", "M"], [feminin_poules, masculin_poules]):
+        nbInscris = len(maListeDeJoueurCourante)
+        maConfigurationPoule = CreationPoules(nbInscris, 1, monSexeCourant)  # bug 1
+        print(f'nombres de joueurs et nombre de gagnant par poule: {maConfigurationPoule.get_pool_sizes_and_winners()}')
+        #print(maConfigurationPoule.get_pool_sizes())                               # bug 2
+        mesPoules = maConfigurationPoule.poules
+        mesMatchsDePoules = AllocationJoueur(poules=mesPoules, joueurs=maListeDeJoueurCourante)
+        mesMatchsDePoules.allouer()
+        mesMatchsDePoules.afficher_resultat()
+
+        for i, unePoule in enumerate(mesMatchsDePoules.poules, start=0):
+            print(f'Building Poule {unePoule.name}')
+            poule_record = tablePoule.create({
+                "Nom"        : str(unePoule.name),
+                "nb_gagnant" : int(unePoule.nb_gagnant),
+                "nb_joueurs" : int(unePoule.nb_joueurs),
+                "lieu"       : str(unePoule.lieu),
+                "Cout"       : int(mesMatchsDePoules._cout_poule(unePoule))
+            })
+            poule_at_id = poule_record["id"]
+
+            # On prépare tous les liens Poule_Joueur pour cette poule
+            # et on les envoie en une seule requête groupée
+            liens_a_creer = []
+            for unJoueur in unePoule.getJoueurs():
+                print(f'ajout du joueur : {unJoueur.prenom, unJoueur.nom}  dans la poule : {unePoule.name}')
+
+                joueur_at_id = joueur_id_par_code.get(unJoueur.id)
+                if joueur_at_id is None:
+                    raise ValueError(f"Joueur introuvable : {unJoueur.id}")
+
+                liens_a_creer.append({
+                    "Poule"     : [poule_at_id],
+                    "CodeJoueur": [joueur_at_id]
+                })
+
+            if liens_a_creer:
+                tablePoule_Joueur.batch_create(liens_a_creer)
 
 
-
-
+## tester la répartition avec la liste des joueurs de 2025 pour voir si OK
 ## selectionner les gagnants au hasard pour chaque poule
-## créer le tableau pour le premier tour 
+## créer le tableau pour le premier tour
 ## crééer le tableau pour la consolante (avec joueurs by)
-## prévoir de faire une tableau de consolante en placant avantageusement ceux qui ont le plus de point = le moins de jeu perdus ou bien la différence entre le ngit statuombre de match perdu et le nomnre de match gagné
+## prévoir de faire une tableau de consolante en placant avantageusement ceux qui ont le plus de point = le moins de jeu perdus ou bien la différence entre le nombre de match perdu et le nombre de match gagné
 ## importer la liste des joueur depuis un fichier Excel ou csv
 ## chargement de la liste des joueurs dans supabase  avec les données d'entrée, le nombre de point et les adversaire
 ## Exporter les résultats dans un fichier excel
