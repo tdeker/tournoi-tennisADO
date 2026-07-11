@@ -84,17 +84,19 @@ def get_airtable_tables():
     return tableJoueur, tablePoule, tablePoule_Joueur
 
 def records_to_joueurs(records) -> list:
-    """Convertit les records Airtable en objets Joueur"""
+    """Convertit les records Airtable en objets Joueur (modèle joueur.py de la branche research)"""
     joueurs = []
     for record in records:
         f = record["fields"]
         joueur = Joueur(
-            name=f.get("Prénom", ""),
-            familyName=f.get("Nom", ""),
+            prenom=f.get("Prénom", ""),
+            nom=f.get("Nom", ""),
             sexe=f.get("Sexe", "M"),
             age=f.get("Age", 0),
-            niveau=int(f.get("Niveau")),
-            seededPlayer=f.get("Seed", False),
+            niveau=int(f.get("Niveau")) if f.get("Niveau") is not None else 1,
+            zone=int(f.get("Zone")) if f.get("Zone") is not None else 1,
+            id=f.get("CodeJoueur", ""),
+            tete_de_serie=f.get("Seed", False),
         )
         joueurs.append(joueur)
     return joueurs
@@ -128,7 +130,9 @@ def get_joueurs():
                     "nom": j.nom, 
                     "niveau": j.niveau,
                     "sexe": j.sexe,
-                    "age": j.age
+                    "age": j.age,
+                    "zone": j.zone,
+                    "tete_de_serie": j.tete_de_serie
                 } for j in joueurs
             ]
         })
@@ -139,96 +143,123 @@ def get_joueurs():
 def generer_poules():
     try:
         tableJoueur, tablePoule, tablePoule_Joueur = get_airtable_tables()
-        
+
         records = tableJoueur.all()
         maListeDeJoueurs = records_to_joueurs(records)
-        maListeDeJoueursFeminin = []
-        maListeDeJoueursMasculin = []
-        
+
+        # Dictionnaire pour retrouver l'ID Airtable d'un joueur à partir de son CodeJoueur
+        # (évite de refaire un tableJoueur.all() à chaque joueur dans la boucle plus bas)
+        joueur_id_par_code = {
+            record["fields"].get("CodeJoueur"): record["id"]
+            for record in records
+            if record["fields"].get("CodeJoueur")
+        }
+
         ### Effacer les poules créées précédemment
-        records = tablePoule.all()
-        ids = [record["id"] for record in records]
+        records_poule = tablePoule.all()
+        ids = [record["id"] for record in records_poule]
         if ids:
             tablePoule.batch_delete(ids)
-        
-        records = tablePoule_Joueur.all()
-        ids = [record["id"] for record in records]
+
+        records_poule_joueur = tablePoule_Joueur.all()
+        ids = [record["id"] for record in records_poule_joueur]
         if ids:
             tablePoule_Joueur.batch_delete(ids)
-        
-        ### Séparation par sexe - CORRECTION DE L'INDENTATION
+
+        ### Séparation par sexe ET par statut :
+        ### les têtes de série sont qualifiées directement (elles ne passent pas par les poules)
+        feminin_poules, masculin_poules = [], []
+        feminin_qualifies, masculin_qualifies = [], []
+
         for joueurCourant in maListeDeJoueurs:
-            print(f"{joueurCourant.prenom} {joueurCourant.nom} - Niveau: {joueurCourant.niveau} - Age: {joueurCourant.age} - Tête de série: {joueurCourant.tete_de_serie}")  
+            print(f"{joueurCourant.prenom} {joueurCourant.nom} - Niveau: {joueurCourant.niveau} - "
+                  f"Zone: {joueurCourant.zone} - Tête de série: {joueurCourant.tete_de_serie}")
             if joueurCourant.sexe == "F":
-                maListeDeJoueursFeminin.append(joueurCourant)
+                (feminin_qualifies if joueurCourant.tete_de_serie else feminin_poules).append(joueurCourant)
             else:
-                maListeDeJoueursMasculin.append(joueurCourant)
-        
+                (masculin_qualifies if joueurCourant.tete_de_serie else masculin_poules).append(joueurCourant)
+
+        print(f"Féminines non têtes de série : {len(feminin_poules)}")
+        print(f"Féminines têtes de série     : {len(feminin_qualifies)}")
+        print(f"Masculins non têtes de série : {len(masculin_poules)}")
+        print(f"Masculins têtes de série     : {len(masculin_qualifies)}")
+
         resultats = {"feminines": [], "masculines": []}
-        
-        ### Création des poules
+        qualifies_directs = {
+            "feminines": [{"prenom": j.prenom, "nom": j.nom, "niveau": j.niveau} for j in feminin_qualifies],
+            "masculines": [{"prenom": j.prenom, "nom": j.nom, "niveau": j.niveau} for j in masculin_qualifies],
+        }
+
+        ### Création des poules (nouvel algo : CreationPoules + AllocationJoueur, branche research)
         for monSexeCourant, maListeDeJoueurCourante, cle in zip(
-            ["F", "M"], 
-            [maListeDeJoueursFeminin, maListeDeJoueursMasculin],
+            ["F", "M"],
+            [feminin_poules, masculin_poules],
             ["feminines", "masculines"]
         ):
             if len(maListeDeJoueurCourante) == 0:
                 continue
-                
+
             nbInscris = len(maListeDeJoueurCourante)
-            maConfigurationPoule = PoolConfigurationGeneratorByTristan(nbInscris, 1)
-            print(f'Nombre de gagnants par poule: {maConfigurationPoule.get_winners_per_pool()}')
-            print(f'Tailles des poules: {maConfigurationPoule.get_pool_sizes_list()}')
-            
-            mesMatchsDePoules = RepartiteurPoulesFixes(
-                maListeDeJoueurCourante, 
-                maConfigurationPoule, 
-                monSexeCourant
-            )
-            mesMatchsDePoules.repartir_par_couts_TK(maListeDeJoueurCourante)
-            mesMatchsDePoules.afficher_resultats()
-            
-            ### Provisioning des Poules dans Airtable
-            for i, unePoule in enumerate(mesMatchsDePoules.get_Poules(), start=0):
+            maConfigurationPoule = CreationPoules(nbInscris, 1, monSexeCourant)
+            print(f'Tailles et gagnants par poule : {maConfigurationPoule.get_pool_sizes_and_winners()}')
+
+            mesPoules = maConfigurationPoule.poules
+            mesMatchsDePoules = AllocationJoueur(poules=mesPoules, joueurs=maListeDeJoueurCourante)
+            mesMatchsDePoules.allouer()
+            mesMatchsDePoules.afficher_resultat()
+
+            ### Provisionning des Poules dans Airtable
+            for unePoule in mesMatchsDePoules.poules:
                 print(f'Building Poule {unePoule.name}')
-                tablePoule.create({
+                poule_record = tablePoule.create({
                     "Nom": str(unePoule.name),
-                    "nb_gagnant": int(mesMatchsDePoules.nb_gagnants[i]),
+                    "nb_gagnant": int(unePoule.nb_gagnant),
                     "nb_joueurs": int(unePoule.nb_joueurs),
                     "lieu": str(unePoule.lieu),
+                    "Cout": int(mesMatchsDePoules._cout_poule(unePoule)),
                 })
-                
+                poule_at_id = poule_record["id"]
+
                 poule_info = {
                     "nom": unePoule.name,
-                    "nb_gagnant": mesMatchsDePoules.nb_gagnants[i],
+                    "nb_gagnant": unePoule.nb_gagnant,
                     "nb_joueurs": unePoule.nb_joueurs,
+                    "cout": round(mesMatchsDePoules._cout_poule(unePoule), 1),
                     "joueurs": []
                 }
-                
+
+                # On prépare tous les liens Poule_Joueur pour cette poule
+                # et on les envoie en une seule requête groupée
+                liens_a_creer = []
                 for unJoueur in unePoule.getJoueurs():
-                    records = tableJoueur.all(formula=f"{{codejoueur}}='{unJoueur.code}'")
-                    if not records:
-                        raise ValueError(f"Joueur introuvable : {unJoueur.code}")
-                    
-                    tablePoule_Joueur.create({
-                        "Poule": str(unePoule.name),
-                        "CodeJoueur": [records[0]["id"]]
+                    joueur_at_id = joueur_id_par_code.get(unJoueur.id)
+                    if joueur_at_id is None:
+                        raise ValueError(f"Joueur introuvable : {unJoueur.id}")
+
+                    liens_a_creer.append({
+                        "Poule": [poule_at_id],
+                        "CodeJoueur": [joueur_at_id]
                     })
-                    
+
                     poule_info["joueurs"].append({
                         "prenom": unJoueur.prenom,
                         "nom": unJoueur.nom,
-                        "niveau": unJoueur.niveau
+                        "niveau": unJoueur.niveau,
+                        "zone": unJoueur.zone,
                     })
-                
+
+                if liens_a_creer:
+                    tablePoule_Joueur.batch_create(liens_a_creer)
+
                 resultats[cle].append(poule_info)
-        
+
         return jsonify({
-            "success": True, 
+            "success": True,
             "message": "Poules générées avec succès",
+            "qualifies_directs": qualifies_directs,
             "poules": resultats
         })
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
