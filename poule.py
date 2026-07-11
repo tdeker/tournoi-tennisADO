@@ -276,7 +276,7 @@ class AllocationJoueur:
     """
  
     # Poids des critères
-    W_GEO     = 40   # géographie homogène    (priorité 1)
+    W_GEO     = 30   # géographie homogène    (priorité 1)
     W_NIVEAU  = 30   # niveaux hétérogènes    (priorité 2)
     W_FAMILLE = 50   # contrainte famille     (priorité 3, quasi-dure)
     W_AGE     = 10   # âge homogène           (priorité 4)

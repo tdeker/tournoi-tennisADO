@@ -5,9 +5,7 @@ import math
 from dotenv import load_dotenv
 import os
 from pyairtable import Api
-import hashlib
-import json
-import requests
+
 
 if __name__ == "__main__":
 
