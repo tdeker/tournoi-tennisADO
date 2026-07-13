@@ -127,3 +127,5 @@ def resetTable(monApi:Api, baseID:str, table:str) :
     records = maTableAEffacer.all()
     ids = [record["id"] for record in records]
     return True
+
+
