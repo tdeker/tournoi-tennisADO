@@ -12,6 +12,9 @@ if __name__ == "__main__":
     load_dotenv()  # charge le fichier .env
     AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
     BASE_ID        = os.getenv("BASE_ID")
+    # Nombre de repêchés pour la consolante, fixé par variable d'environnement (un par sexe)
+    NB_REPECHES_F  = int(os.getenv("NB_REPECHES_CONSOLANTE_F", "0"))
+    NB_REPECHES_H  = int(os.getenv("NB_REPECHES_CONSOLANTE_H", "0"))
     monApiAT = Api(AIRTABLE_TOKEN)
     tableJoueur = monApiAT.table(BASE_ID, "Joueur")
     tablePoule = monApiAT.table(BASE_ID, "Poule")
@@ -81,9 +84,15 @@ if __name__ == "__main__":
     if ids:
         tablePoule_Joueur.batch_delete(ids)
 
-    for monSexeCourant, maListeDeJoueurCourante in zip(["F", "M"], [feminin_poules, masculin_poules]):
+    for monSexeCourant, maListeDeJoueurCourante, maListeDeQualifiesCourante, nbRepechesCourant in zip(
+        ["F", "M"], [feminin_poules, masculin_poules], [feminin_qualifies, masculin_qualifies],
+        [NB_REPECHES_F, NB_REPECHES_H]
+    ):
         nbInscris = len(maListeDeJoueurCourante)
-        maConfigurationPoule = CreationPoules(nbInscris, 1, monSexeCourant)  # bug 1
+        nbSeeds   = len(maListeDeQualifiesCourante)
+        maConfigurationPoule = CreationPoules(
+            nbInscris, 1, monSexeCourant, nb_seeds=nbSeeds, nb_repeches=nbRepechesCourant
+        )
         print(f'nombres de joueurs et nombre de gagnant par poule: {maConfigurationPoule.get_pool_sizes_and_winners()}')
         #print(maConfigurationPoule.get_pool_sizes())                               # bug 2
         mesPoules = maConfigurationPoule.poules

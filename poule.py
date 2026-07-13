@@ -144,10 +144,13 @@ class Poule:
         return any(j.nom_famille == joueur.nom_famille for j in self.joueurs)
    
 class CreationPoules:
-    def __init__(self, nb_joueur: int, nb_console: int = 1, sexe: str = "M"):
-        self.nb_joueurs = nb_joueur
-        self.nb_console = nb_console
-        self.sexe       = sexe
+    def __init__(self, nb_joueur: int, nb_console: int = 1, sexe: str = "M",
+                 nb_seeds: int = 0, nb_repeches: int = 0):
+        self.nb_joueurs  = nb_joueur
+        self.nb_console  = nb_console
+        self.sexe        = sexe
+        self.nb_seeds    = nb_seeds     # têtes de série : places réservées dans le tableau, hors poules
+        self.nb_repeches = nb_repeches  # joueurs repêchés : réintègrent le tableau principal sans passer par une victoire de poule
 
         self.poules: List[Poule] = self._creation_poules_vides()
         self._nommage_poules()
@@ -199,23 +202,41 @@ class CreationPoules:
     # ─────────────────────────────────────────
     def _nb_qualifies_cible(self) -> int:
         """
-        Plus grande puissance de 2 réalisable :
-        - ≤ nb_joueurs  (bracket standard)
-        - ≤ somme(capacité_poule - 1)  (au moins 1 éliminé par poule)
+        Nombre de qualifiés (vainqueurs de poule) à faire sortir des poules pour
+        compléter le tableau principal, aux côtés des têtes de série et des repêchés.
+
+        Taille_tableau = puissance de 2 inférieure la plus proche de
+                         (nb_seeds + nb_joueurs)  (plafonnée à 64)
+        nb_qualifies   = Taille_tableau - nb_seeds - nb_repeches
+                         (borné par la somme des places "éliminables" des poules,
+                          i.e. au moins 1 éliminé par poule)
         """
         if self.nb_joueurs < 1:
             raise ValueError("nb_joueurs doit être >= 1")
 
         max_qualifies = sum(p.nb_joueurs - 1 for p in self.poules)
-        puissance = 1 << (self.nb_joueurs.bit_length() - 1)  # ≤ n
 
-        # On descend jusqu'à trouver une puissance de 2 réalisable
-        while puissance > max_qualifies:
-            puissance >>= 1
+        total_participants = self.nb_joueurs + self.nb_seeds
 
-        if puissance < 1:
-            raise ValueError("Impossible de former un bracket avec cette configuration.")
-        return puissance
+        # Puissance de 2 inférieure la plus proche de total_participants (plafonnée à 64)
+        taille_tableau = 1
+        while taille_tableau * 2 <= total_participants and taille_tableau < 64:
+            taille_tableau <<= 1
+
+        cible = taille_tableau - self.nb_seeds - self.nb_repeches
+
+        # Si le tableau visé exige plus de qualifiés que ce que les poules
+        # peuvent fournir, on redescend d'une puissance de 2.
+        while cible > max_qualifies and taille_tableau > 1:
+            taille_tableau >>= 1
+            cible = taille_tableau - self.nb_seeds - self.nb_repeches
+
+        if cible < 1:
+            raise ValueError(
+                "Impossible de former un bracket avec cette configuration "
+                "(trop de têtes de série et/ou de repêchés)."
+            )
+        return cible
 
 
     def _assigner_gagnants(self) -> None:
@@ -566,5 +587,3 @@ class AllocationJoueur:
                 print(f"⚠️  {cle} : collision de famille détectée !")
             if not d["niveaux_uniques"]:
                 print(f"⚠️  {cle} : doublons de niveau (inévitable si > 5 joueurs).")
-    
- 
