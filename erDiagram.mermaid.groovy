@@ -7,6 +7,7 @@ erDiagram
   Tournoi ||--o{ Match : "programme"
   Joueur |o--o{ Match : "dispute"
   Match |o--o| Match : "qualifie pour"
+  Match ||--o{ Set_tournoi : "compose de"
 
   Joueur {
     string CodeJoueur PK "Identifiant joueur"
@@ -33,8 +34,10 @@ erDiagram
     number Points
     number Victoires
     number Defaites
+    number Jeux_gagnes "Cumul sur les matchs de poule"
+    number Jeux_perdus "Cumul sur les matchs de poule, sert au departage"
     number Matchs_joues
-    boolean Est_qualifie "Case a cocher"
+    boolean Est_qualifie "Case a cocher, editable a la main"
     string Zone_joueur "Lookup CodeJoueur.Zone"
     string Niveau_joueur "Lookup CodeJoueur.Niveau"
     string Prenom_joueur "Lookup CodeJoueur.Prenom"
@@ -54,7 +57,7 @@ erDiagram
 
   Tournoi {
     string Nom PK
-    string Type "Principal ou Consolante"
+    string Type "Principal, Consolante ou Poule"
     string Sexe "Homme, Femme, Mixte"
     number Taille_tableau "Puissance de 2, 64 max"
     link Tournoi_principal FK "-> Tournoi, rempli si Type=Consolante"
@@ -89,4 +92,14 @@ erDiagram
     string Terrain
     link Match_suivant FK "-> Match"
     link Matchs_precedents FK "-> Match, lien inverse de Match_suivant"
+    link Sets FK "-> Set_tournoi, lien inverse"
+  }
+
+  Set_tournoi {
+    number CodeSet PK "Autonumber"
+    link Match FK "-> Match"
+    number Numero_set "1, 2, 3..."
+    number Score_joueur_1 "Jeux gagnes par Joueur_1 sur ce set"
+    number Score_joueur_2 "Jeux gagnes par Joueur_2 sur ce set"
+    string Ref_Match "Lookup Match.Code"
   }

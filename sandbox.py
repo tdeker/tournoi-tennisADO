@@ -1,94 +1,69 @@
-from poule import *
-from collections import defaultdict, Counter
-from joueur import *
-import random
-from typing import List, Dict, Tuple, Optional
-import itertools
+"""
+Sandbox : création des 2 tournois de consolante (Hommes / Femmes).
+
+Utilise Poule_Joueur.Est_qualifie (calculé par provisioning.py, voir
+prov.provisionner_points_poules) pour déterminer qui n'est PAS qualifié
+pour le principal, puis délègue le placement dans le tableau à
+tournoi.py (GestionnaireResultat.remplir_consolante).
+"""
+
+import os
+from dotenv import load_dotenv
+from pyairtable import Api
+from tournoi import GestionnaireResultat
+
+load_dotenv()
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+BASE_ID = os.getenv("BASE_ID")
+
+api = Api(AIRTABLE_TOKEN)
+table_poule_joueur = api.table(BASE_ID, "Poule_Joueur")
+table_joueur = api.table(BASE_ID, "Joueur")
+
+# remplir aléatoirement les points des poules
+# prov.provisionner_points_poules(graine=42)
+
+def codes_non_qualifies_par_sexe(sexe):
+    """
+    Retourne la liste des CodeJoueur des joueurs NON qualifiés
+    (Est_qualifie décoché ou vide) ET ayant déclaré vouloir jouer la
+    consolante (OK_consolante coché), pour un sexe donné ("H" ou "F",
+    selon Joueur.Sexe).
+    """
+    joueurs_par_id = {r["id"]: r["fields"] for r in table_joueur.all()}
+
+    codes = []
+    for pj in table_poule_joueur.all():
+        if pj["fields"].get("Est_qualifie"):
+            continue  # qualifié -> va au principal, pas à la consolante
+        if not pj["fields"].get("OK_consolante"):
+            continue  # n'a pas souhaité jouer la consolante
+
+        liens_joueur = pj["fields"].get("CodeJoueur") or []
+        if not liens_joueur:
+            continue
+
+        joueur = joueurs_par_id.get(liens_joueur[0])
+        if not joueur or joueur.get("Sexe") != sexe:
+            continue
+
+        codes.append(joueur.get("CodeJoueur"))
+
+    return codes
 
 
-if __name__ == "__main__":
-    print("debut")
-    joueurs = creation_joueurs_avec_nom_famille(16, 0)
-    for joueur in joueurs:
-        print(joueur.prenom + " " + joueur.nom + "-" + str(joueur.niveau) + "-" + str(joueur.age) + "-" + str(joueur.tete_de_serie))
-    print(f"Nombre total de joueurs: {len(joueurs)}")
-    print("Distribution par niveau:")
-    niveaux = Counter(j.niveau for j in joueurs)
-    for niveau in sorted(niveaux.keys(), reverse=True):
-        print(f"  Niveau {niveau}: {niveaux[niveau]} joueurs")
-    
-    # Tailles de poules fixes : 4, 5, 3, 4 (total = 16)
-    tailles_poules = [4, 5, 3, 4]
-    print(f"\nTailles de poules imposées: {tailles_poules}")
- 
+gestionnaire = GestionnaireResultat(api_key=AIRTABLE_TOKEN, base_id=BASE_ID)
 
-    # Répartition avec backtracking
-    repartiteur = RepartiteurPoulesFixes(joueurs, tailles_poules)
-    print("\n🔍 Tentative par la fonction de Tristan...")
-       # Réoartition par calcul de coût par Tristan
-    repartiteur.repartir_par_couts_TK(joueurs)
-    print("✅ Solution trouvée par TK!")
-    repartiteur.afficher_resultats()
-    exit() 
+codes_h = codes_non_qualifies_par_sexe("H")
+codes_f = codes_non_qualifies_par_sexe("F")
+
+print(f"Consolante Hommes : {len(codes_h)} joueur(s) -> {codes_h}")
+print(f"Consolante Femmes : {len(codes_f)} joueur(s) -> {codes_f}")
+
+gestionnaire.remplir_consolante("Consolante Hommes", codes_h, graine=42)
+gestionnaire.remplir_consolante("Consolante Femmes", codes_f, graine=42)
+
+print("Tableaux de consolante créés dans Resultat.")
 
 
-    repartiteur.reset_poule()
-    poules = repartiteur.repartir_par_backtracking()
-    
-    if poules:
-        print("✅ Solution trouvée par backtracking!")
-        repartiteur.afficher_resultats()
-    else:
-        print("❌ Pas de solution par backtracking. Tentative par recherche locale...")
-        poules = repartiteur.repartir_par_recherche_locale()
-        
-        if poules:
-            print("✅ Solution trouvée par recherche locale!")
-            repartiteur.afficher_resultats()
-        else:
-            print("❌ Aucune solution trouvée. Les contraintes sont trop restrictives.")
-           # quit()
 
-      # test de la répartition TH ie Fllaback
-    
-   # repartiteur.reset_poule()
-
-    # Vérification des contraintes
-    print(f"\n=== VÉRIFICATION DES CONTRAINTES ===")
-    contraintes_ok = True
-    
-    for i, poule in enumerate(poules):
-        print(f"\nPoule {i+1}:")
-        
-        # Vérifier la taille
-        if len(poule) != tailles_poules[i]:
-            print(f"  ❌ Taille incorrecte: {len(poule)} au lieu de {tailles_poules[i]}")
-            contraintes_ok = False
-        else:
-            print(f"  ✅ Taille correcte: {len(poule)}")
-        
-        if poule:
-            niveaux = [j.niveau for j in poule]
-            familles = [j.nom for j in poule]
-            
-            # Vérifier contrainte de niveau
-            ecart = max(niveaux) - min(niveaux)
-            if ecart > 1:
-                print(f"  ❌ Écart de niveau > 1: {min(niveaux)}-{max(niveaux)} (écart: {ecart})")
-                contraintes_ok = False
-            else:
-                print(f"  ✅ Écart de niveau OK: {min(niveaux)}-{max(niveaux)} (écart: {ecart})")
-            
-            # Vérifier contrainte familiale
-            if len(familles) != len(set(familles)):
-                familles_dupliquees = [f for f in set(familles) if familles.count(f) > 1]
-                print(f"  ❌ Familles en double: {familles_dupliquees}")
-                contraintes_ok = False
-            else:
-                print(f"  ✅ Pas de conflit familial")
-    
-    if contraintes_ok:
-        print(f"\n🎉 TOUTES LES CONTRAINTES SONT RESPECTÉES!")
-    else:
-        print(f"\n⚠️  Certaines contraintes ne sont pas respectées.")
-    print("fin")

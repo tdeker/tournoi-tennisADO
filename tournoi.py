@@ -429,6 +429,28 @@ class GestionnaireResultat:
 
         return self._ecrire_resultats(positions, tournoi, lambda joueur: "Consolante")
 
+    # Colonne Resultat du 1er tour, selon la taille du tableau
+    # (convention tennis : T_1_32 = tableau de 64, ..., Finale = tableau de 2)
+    _COLONNES_PREMIER_TOUR = {
+        64: "T_1_32",
+        32: "T_1_16",
+        16: "T_1_8",
+        8: "T_1_4",
+        4: "T_1_2",
+        2: "Finale",
+    }
+
+    @classmethod
+    def _colonne_premier_tour(cls, taille_tableau):
+        colonne = cls._COLONNES_PREMIER_TOUR.get(taille_tableau)
+        if colonne is None:
+            raise ValueError(
+                f"Taille de tableau {taille_tableau} non standard (attendu "
+                f"une puissance de 2 entre 2 et 64) : impossible de "
+                f"déterminer la colonne du 1er tour dans Resultat."
+            )
+        return colonne
+
     def _ecrire_resultats(self, positions, tournoi_record, origine_joueur):
         """
         Crée les enregistrements Resultat, un par position du tableau
@@ -443,19 +465,36 @@ class GestionnaireResultat:
           laissé vide : aucune des valeurs autorisées du schéma ne
           correspond, et l'absence de lien Joueur suffit à identifier
           un bye.
+
+        Résultat du 1er tour : quand un joueur est exempté (bye), il
+        gagne automatiquement sans jouer - sa colonne du 1er tour
+        (voir _colonne_premier_tour) est donc renseignée à "V" dès la
+        création de l'enregistrement. Les vrais matchs (deux joueurs
+        réels face à face) n'ont pas encore de résultat, leur colonne
+        du 1er tour reste vide. Les positions 2k-1 et 2k forment le
+        match k du 1er tour (voir TableauBracket.calculer_positions).
         """
         nom_tournoi = tournoi_record["fields"]["Nom"]
+        colonne_tour = self._colonne_premier_tour(len(positions))
+
         nouveaux_records = []
-        for p in positions:
-            joueur = p["joueur"]
-            champs = {
-                "Ref": f"{nom_tournoi}-{p['position']:03d}",
-                "Position": p["position"],
-                "Tournoi": [tournoi_record["id"]],
-            }
-            if joueur:
-                champs["Joueur"] = [joueur["id"]]
-                champs["Origine"] = origine_joueur(joueur)
-            nouveaux_records.append(champs)
+        for i in range(0, len(positions), 2):
+            p_a, p_b = positions[i], positions[i + 1]
+            joueur_a, joueur_b = p_a["joueur"], p_b["joueur"]
+            bye = (joueur_a is None) != (joueur_b is None)  # un seul des deux présent
+
+            for p in (p_a, p_b):
+                joueur = p["joueur"]
+                champs = {
+                    "Ref": f"{nom_tournoi}-{p['position']:03d}",
+                    "Position": p["position"],
+                    "Tournoi": [tournoi_record["id"]],
+                }
+                if joueur:
+                    champs["Joueur"] = [joueur["id"]]
+                    champs["Origine"] = origine_joueur(joueur)
+                    if bye:
+                        champs[colonne_tour] = "V"
+                nouveaux_records.append(champs)
 
         return self.table_resultat.batch_create(nouveaux_records)
