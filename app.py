@@ -191,16 +191,24 @@ def generer_poules():
         }
 
         ### Création des poules (nouvel algo : CreationPoules + AllocationJoueur, branche research)
-        for monSexeCourant, maListeDeJoueurCourante, cle in zip(
+        NB_REPECHES_F = int(os.getenv("NB_REPECHES_CONSOLANTE_F", "0"))
+        NB_REPECHES_H = int(os.getenv("NB_REPECHES_CONSOLANTE_H", "0"))
+
+        for monSexeCourant, maListeDeJoueurCourante, maListeDeQualifiesCourante, cle, nbRepechesCourant in zip(
             ["F", "M"],
             [feminin_poules, masculin_poules],
-            ["feminines", "masculines"]
+            [feminin_qualifies, masculin_qualifies],
+            ["feminines", "masculines"],
+            [NB_REPECHES_F, NB_REPECHES_H]
         ):
             if len(maListeDeJoueurCourante) == 0:
                 continue
 
             nbInscris = len(maListeDeJoueurCourante)
-            maConfigurationPoule = CreationPoules(nbInscris, 1, monSexeCourant)
+            nbSeeds   = len(maListeDeQualifiesCourante)
+            maConfigurationPoule = CreationPoules(
+                nbInscris, 1, monSexeCourant, nb_seeds=nbSeeds, nb_repeches=nbRepechesCourant
+            )
             print(f'Tailles et gagnants par poule : {maConfigurationPoule.get_pool_sizes_and_winners()}')
 
             mesPoules = maConfigurationPoule.poules

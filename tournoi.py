@@ -107,11 +107,24 @@ class TableauBracket:
         self.nb_joueurs = len(joueurs_tries)
         self.taille_tableau = taille_tableau or self._taille_puissance_2(self.nb_joueurs)
 
+        if taille_tableau is not None and not self._est_puissance_de_2(taille_tableau):
+            raise ValueError(
+                f"Taille_tableau={taille_tableau} n'est pas une puissance de 2 "
+                f"(4, 8, 16, 32, 64...). Vérifie le champ Taille_tableau du "
+                f"Tournoi dans Airtable : c'est la taille du TABLEAU, pas le "
+                f"nombre de joueurs. Laisse-le vide pour un calcul automatique "
+                f"(prochaine puissance de 2 au-dessus du nombre de joueurs)."
+            )
+
         if self.nb_joueurs > self.taille_tableau:
             raise ValueError(
                 f"{self.nb_joueurs} joueurs pour un tableau de "
                 f"{self.taille_tableau} places : le tableau est trop petit."
             )
+
+    @staticmethod
+    def _est_puissance_de_2(n):
+        return isinstance(n, int) and n >= 1 and (n & (n - 1)) == 0
 
     @staticmethod
     def _taille_puissance_2(n):
@@ -156,20 +169,47 @@ class TableauBracket:
         return positions
 
 
-# --- Détection de famille (reprise de l'ancien tournoi.py) ----------------
+# --- Détection de famille (élargie : Nom OU Lieu_vacances identiques) -----
 
-def _nom_famille(entry):
-    """Nom normalisé du joueur d'une entrée de positions (None si bye)."""
+def _cles_famille(entry):
+    """
+    Renvoie (nom_normalise, lieu_vacances_normalise) du joueur d'une
+    entrée de positions, ou (None, None) si bye. Normalisation :
+    minuscules + espaces superflus retirés, pour tolérer les écarts
+    de casse/saisie (mais PAS les fautes de frappe : "St Tropez" et
+    "Saint-Tropez" resteront considérés différents - à uniformiser
+    en amont si besoin, idéalement via un champ Sélection unique
+    plutôt que texte libre pour Lieu_vacances).
+    """
     joueur = entry["joueur"]
     if joueur is None:
-        return None
-    return joueur["fields"].get("Nom", "").strip().lower() or None
+        return None, None
+    nom = joueur["fields"].get("Nom", "").strip().lower() or None
+    lieu = joueur["fields"].get("Lieu_vacances", "").strip().lower() or None
+    return nom, lieu
+
+
+def _meme_famille(entry_a, entry_b):
+    """
+    Deux joueurs sont considérés de la même famille s'ils partagent
+    le même Nom OU le même Lieu_vacances (les deux critères sont des
+    indices indépendants de parenté/proximité, l'un ou l'autre
+    suffit - ce n'est pas un ET).
+    """
+    nom_a, lieu_a = _cles_famille(entry_a)
+    nom_b, lieu_b = _cles_famille(entry_b)
+    if nom_a is None or nom_b is None:
+        return False
+    meme_nom = nom_a == nom_b
+    meme_lieu = lieu_a is not None and lieu_a == lieu_b
+    return meme_nom or meme_lieu
 
 
 def corriger_conflits_familiaux(positions, indices_echangeables, rng):
     """
-    Répare un placement pour éviter que deux joueurs portant le même
-    Nom (même famille) se rencontrent au 1er tour.
+    Répare un placement pour éviter que deux joueurs de la même
+    famille (même Nom OU même Lieu_vacances, voir _meme_famille) se
+    rencontrent au 1er tour.
 
     - positions : liste renvoyée par TableauBracket.calculer_positions()
       (modifiée EN PLACE : seuls les joueurs bougent, les champs
@@ -194,8 +234,7 @@ def corriger_conflits_familiaux(positions, indices_echangeables, rng):
 
     def conflit(i_pair):
         a, b = positions[i_pair], positions[i_pair + 1]
-        na, nb = _nom_famille(a), _nom_famille(b)
-        return na is not None and na == nb
+        return _meme_famille(a, b)
 
     def debut_de_paire(idx):
         return idx - (idx % 2)
@@ -399,6 +438,17 @@ class GestionnaireResultat:
         - graine : optionnel, pour une réparation familiale
           reproductible.
 
+        IMPORTANT : contrairement au principal, Taille_tableau n'est
+        PAS lu comme une entrée ici - c'est une donnée de SORTIE,
+        calculée automatiquement (prochaine puissance de 2 au-dessus
+        du nombre de joueurs à consoler) puis ÉCRITE dans le Tournoi
+        Airtable. La taille de la consolante dépend du nombre de
+        perdants, pas d'une décision d'organisateur fixée à l'avance
+        (contrairement au principal) : elle n'a donc pas à être
+        pré-remplie dans Airtable, et une valeur qui y traînerait
+        serait de toute façon ignorée puis écrasée par la valeur
+        calculée.
+
         Le tri se fait automatiquement par NOMBRE DE POINTS (champ
         Points de Poule_Joueur), du plus élevé au plus faible : ce
         sont donc les joueurs avec le plus de points qui héritent des
@@ -409,15 +459,18 @@ class GestionnaireResultat:
         règle "le plus de points face aux byes".
         """
         tournoi = self._recuperer_tournoi(nom_tournoi_consolante)
-        taille_tableau = tournoi["fields"].get("Taille_tableau")  # None -> auto
 
         joueurs = self._recuperer_joueurs_par_codes(codes_joueurs_consolante)
         for j in joueurs:
             j["_points"] = self._recuperer_points_joueur(j["fields"]["CodeJoueur"])
         joueurs.sort(key=lambda j: j["_points"], reverse=True)
 
-        bracket = TableauBracket(joueurs, taille_tableau)
+        bracket = TableauBracket(joueurs, taille_tableau=None)  # toujours calculé
         positions = bracket.calculer_positions()
+
+        # Taille_tableau est une SORTIE : on l'écrit dans Airtable une
+        # fois calculée, jamais lue comme entrée pour ce tournoi.
+        self.table_tournoi.update(tournoi["id"], {"Taille_tableau": bracket.taille_tableau})
 
         # Réparation familiale : en consolante, aucun joueur n'est
         # "protégé" (nb_proteges=0), mais les joueurs face à un bye

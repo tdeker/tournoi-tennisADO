@@ -20,6 +20,7 @@ erDiagram
     string Sexe "Single select H, F"
     boolean Seed "Tete de serie du tableau principal"
     string Zone "Single select 1-5"
+    string Lieu_vacances "Utilise pour elargir la detection de famille (meme lieu = meme famille)"
     link Participations FK "-> Poule_Joueur, lien inverse"
     link Resultats FK "-> Resultat, lien inverse"
     link Matchs_Joueur_1 FK "-> Match, lien inverse"
@@ -34,10 +35,9 @@ erDiagram
     number Points
     number Victoires
     number Defaites
-    number Jeux_gagnes "Cumul sur les matchs de poule"
-    number Jeux_perdus "Cumul sur les matchs de poule, sert au departage"
     number Matchs_joues
     boolean Est_qualifie "Case a cocher, editable a la main"
+    boolean OK_consolante "Case a cocher, souhait du joueur de jouer la consolante"
     string Zone_joueur "Lookup CodeJoueur.Zone"
     string Niveau_joueur "Lookup CodeJoueur.Niveau"
     string Prenom_joueur "Lookup CodeJoueur.Prenom"
