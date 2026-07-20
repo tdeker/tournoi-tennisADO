@@ -141,7 +141,23 @@ class Poule:
         return sum(1 for j in self.joueurs if j.niveau == niveau)
 
     def a_meme_famille(self, joueur: Joueur) -> bool:
-        return any(j.nom_famille == joueur.nom_famille for j in self.joueurs)
+        return any(sont_de_la_meme_famille(j, joueur) for j in self.joueurs)
+
+
+def _a_collision_famille(joueurs: list[Joueur]) -> bool:
+    """
+    Détecte si au moins deux joueurs de la liste sont de la même
+    famille (même nom OU même lieu de vacances, voir
+    sont_de_la_meme_famille). Vérification par paire, nécessaire
+    depuis l'élargissement du critère : une simple déduplication de
+    nom_famille via un set() ne suffit plus, puisque deux joueurs
+    peuvent être en collision via le lieu de vacances sans partager
+    le même nom.
+    """
+    return any(
+        sont_de_la_meme_famille(a, b)
+        for a, b in itertools.combinations(joueurs, 2)
+    )
    
 class CreationPoules:
     def __init__(self, nb_joueur: int, nb_console: int = 1, sexe: str = "M",
@@ -344,8 +360,8 @@ class AllocationJoueur:
         return max(0.0, c)
  
     def _cout_famille(self, joueur: Joueur, joueurs_ref: list[Joueur]) -> float:
-        """Priorité 3 — Contrainte famille (quasi-dure)."""
-        if any(j.nom_famille == joueur.nom_famille for j in joueurs_ref):
+        """Priorité 3 — Contrainte famille (quasi-dure). Même nom OU même lieu de vacances."""
+        if any(sont_de_la_meme_famille(j, joueur) for j in joueurs_ref):
             return float(self.W_FAMILLE)
         return 0.0
  
@@ -411,7 +427,7 @@ class AllocationJoueur:
         """
         n = len(self.joueurs)
         nb_meme_niveau  = sum(1 for j in self.joueurs if j.niveau       == joueur.niveau)
-        nb_meme_famille = sum(1 for j in self.joueurs if j.nom_famille  == joueur.nom_famille)
+        nb_meme_famille = sum(1 for j in self.joueurs if sont_de_la_meme_famille(j, joueur))
         nb_meme_zone    = sum(1 for j in self.joueurs if j.zone         == joueur.zone)
  
         return (1 / nb_meme_niveau) + (nb_meme_famille / n) + (1 / nb_meme_zone)
@@ -507,7 +523,7 @@ class AllocationJoueur:
             zones    = [j.zone   for j in poule.joueurs]
             niveaux  = [j.niveau for j in poule.joueurs]
             ages     = [j.age    for j in poule.joueurs]
-            familles = [j.nom_famille for j in poule.joueurs]
+            collision_famille = _a_collision_famille(poule.joueurs)
  
             zone_dom      = max(set(zones), key=zones.count) if zones else None
             taux_zone_dom = zones.count(zone_dom) / len(zones) if zones else 0
@@ -520,7 +536,7 @@ class AllocationJoueur:
                 "taux_zone_dominante" : round(taux_zone_dom, 2),
                 "age_moyen"           : round(statistics.mean(ages), 1) if ages else None,
                 "ecart_type_age"      : round(statistics.stdev(ages), 1) if len(ages) > 1 else 0,
-                "collision_famille"   : len(familles) != len(set(familles)),
+                "collision_famille"   : collision_famille,
                 "cout_poule"          : round(self._cout_poule(poule), 2),
             }
         rapport["score_global"] = round(self.score_global(), 2)
@@ -537,7 +553,7 @@ class AllocationJoueur:
             zones    = [j.zone   for j in poule.joueurs]
             niveaux  = [j.niveau for j in poule.joueurs]
             ages     = [j.age    for j in poule.joueurs]
-            familles = [j.nom_famille for j in poule.joueurs]
+            collision_famille = _a_collision_famille(poule.joueurs)
 
             zone_dom      = max(set(zones), key=zones.count) if zones else None
             taux_zone_dom = zones.count(zone_dom) / len(zones) if zones else 0
@@ -552,7 +568,7 @@ class AllocationJoueur:
                 "taux_zone_dominante" : round(taux_zone_dom, 2),
                 "age_moyen"           : round(statistics.mean(ages), 1) if ages else None,
                 "ecart_type_age"      : round(statistics.stdev(ages), 1) if len(ages) > 1 else 0,
-                "collision_famille"   : len(familles) != len(set(familles)),
+                "collision_famille"   : collision_famille,
                 "cout_poule"          : round(self._cout_poule(poule), 2),
             }
         rapport["score_global"] = round(self.score_global(), 2)
@@ -567,11 +583,11 @@ class AllocationJoueur:
         for i, poule in enumerate(self.poules, start=1):  # ← index à la place de poule.id
             label = poule.name if poule.name else f"Poule {i}"
             print(f"\n📋 {label}  ({poule.taille}/{poule.capacite} joueurs)")
-            print(f"   {'Joueur':<26} {'Niv':>4} {'Zone':>5} {'Âge':>5}  Famille")
-            print(f"   {'-'*57}")
+            print(f"   {'Joueur':<26} {'Niv':>4} {'Zone':>5} {'Âge':>5}  Famille       Vacances")
+            print(f"   {'-'*72}")
             for j in sorted(poule.joueurs, key=lambda x: x.niveau):
                 print(f"   {j.prenom+' '+j.nom:<26} {j.niveau:>4} {j.zone:>5}"
-                    f" {j.age:>5}  {j.nom_famille}")
+                    f" {j.age:>5}  {j.nom_famille:<12}  {j.lieu_vacances}")
             print(f"   → Coût poule : {self._cout_poule(poule):.1f}")
 
         diag = self.diagnostics()
