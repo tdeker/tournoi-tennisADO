@@ -11,6 +11,9 @@ import os
 from dotenv import load_dotenv
 from pyairtable import Api
 from tournoi import GestionnaireResultat
+from score_provisionning import ProvisionneurAirtable
+   
+
 
 load_dotenv()
 AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
@@ -20,8 +23,15 @@ api = Api(AIRTABLE_TOKEN)
 table_poule_joueur = api.table(BASE_ID, "Poule_Joueur")
 table_joueur = api.table(BASE_ID, "Joueur")
 
+prov = ProvisionneurAirtable(
+        api_key=AIRTABLE_TOKEN,
+        base_id=BASE_ID,
+    )
+#prov.creer_champs_poule_joueur()
+#prov.provisionner_points_poules(graine=42)
+
 # remplir aléatoirement les points des poules
-# prov.provisionner_points_poules(graine=42)
+prov.provisionner_points_poules(graine=42)
 
 def codes_non_qualifies_par_sexe(sexe):
     """
