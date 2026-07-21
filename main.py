@@ -43,6 +43,7 @@ if __name__ == "__main__":
                 zone          = int(f.get("Zone"))   if f.get("Zone")   is not None else None,
                 tete_de_serie = f.get("Seed", False),
                 id            = f.get("CodeJoueur", ""),
+                lieu_vacances = f.get("Lieu_vacances", ""),  
             )
             joueurs.append(joueur)
         return joueurs
