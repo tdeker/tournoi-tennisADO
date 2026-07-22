@@ -26,6 +26,5 @@ l'algo de création de Poule qui maximise les poules de 4 est correcte, après e
 changement de l'algorithme d'allocation des joueurs dans les poules avec les nouvelles demandes de l'équipe Tennis
 A faire: gérer les tête de série lors du chargement des données dans l'objet Joueurs et supprimer les tetes de série de l'allocation des poules
 problème sur la création des poules: le nombre de gagnant est mal répartie et les poules ne sont pas nomées
-## 19/07
-ajout de provisionning points qui permet de saisir les nombres de points de pour chauqye joueur dans une poule afin de générer le tableau des consolantes puis du tournoi principal
-Pb avec le cacul des scores actuel : cela génére de ex-aequoi qui ne permettent pas de discréminer les perdant et les gagnant étudier un système de Bonus-Malus pour valoriser les différences de niveaux
+## 13/07 
+Penser à déployer les variables d'environnement sur railway (nb de repéchés)

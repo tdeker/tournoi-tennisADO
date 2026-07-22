@@ -27,11 +27,29 @@ prov = ProvisionneurAirtable(
         api_key=AIRTABLE_TOKEN,
         base_id=BASE_ID,
     )
-#prov.creer_champs_poule_joueur()
-#prov.provisionner_points_poules(graine=42)
 
-# remplir aléatoirement les points des poules
+# Etape -1 : repart d'un etat propre. Sans ca, OK_consolante resterait
+# fige d'un run a l'autre (provisionner_ok_consolante ne touche pas par
+# defaut aux enregistrements deja renseignes), et Est_qualifie/Points
+# pourraient trainer une valeur d'un run precedent avant recalcul.
+resultat_reinit = prov.reinitialiser_poule_joueur()
+print(f"Reinitialisation : {resultat_reinit['maj']} Poule_Joueur remis a vide.")
+
+# Etape 0 (idempotente) : s'assure que les champs necessaires existent
+# dans Poule_Joueur (Victoires/Defaites/Points/Matchs_joues/Est_qualifie/
+# OK_consolante). Sans risque si deja presents : ne recree rien.
+prov.creer_champs_poule_joueur()
+
+# Etape 1 : simule les poules (round-robin) et ecrit Points/Est_qualifie.
 prov.provisionner_points_poules(graine=42)
+
+# Etape 2 (donnees de TEST uniquement - en conditions reelles OK_consolante
+# est une declaration du joueur, jamais ecrite par un script) : simule qui,
+# parmi les perdants de poule, souhaite jouer la consolante. Sans cet appel,
+# OK_consolante reste vide pour tout le monde et codes_non_qualifies_par_sexe
+# ci-dessous renverrait des listes vides.
+prov.provisionner_ok_consolante(graine=42)
+
 
 def codes_non_qualifies_par_sexe(sexe):
     """
@@ -70,10 +88,19 @@ codes_f = codes_non_qualifies_par_sexe("F")
 print(f"Consolante Hommes : {len(codes_h)} joueur(s) -> {codes_h}")
 print(f"Consolante Femmes : {len(codes_f)} joueur(s) -> {codes_f}")
 
-gestionnaire.remplir_consolante("Consolante Hommes", codes_h, graine=42)
-gestionnaire.remplir_consolante("Consolante Femmes", codes_f, graine=42)
+# Garde : remplir_consolante suppose au moins 1 joueur (TableauBracket ne
+# sait pas construire un tableau vide). Avec la simulation aleatoire de
+# OK_consolante, une liste vide reste possible (peu de perdants, ou
+# probabilite d'opt-in defavorable) - on l'evite proprement plutot que de
+# laisser planter le script.
+if codes_h:
+    gestionnaire.remplir_consolante("Consolante Hommes", codes_h, graine=42)
+else:
+    print("Consolante Hommes : aucun inscrit, tableau non cree.")
+
+if codes_f:
+    gestionnaire.remplir_consolante("Consolante Femmes", codes_f, graine=42)
+else:
+    print("Consolante Femmes : aucun inscrit, tableau non cree.")
 
 print("Tableaux de consolante créés dans Resultat.")
-
-
-

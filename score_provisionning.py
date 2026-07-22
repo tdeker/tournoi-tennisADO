@@ -165,6 +165,60 @@ class ProvisionneurAirtable:
 
         return crees
 
+    def reinitialiser_poule_joueur(self, champs=None):
+        """
+        Remet à vide/décoche, pour TOUS les enregistrements Poule_Joueur,
+        les champs de simulation (Victoires, Defaites, Points,
+        Matchs_joues, Est_qualifie, OK_consolante par défaut).
+
+        Utile pour repartir d'un état propre avant une nouvelle
+        simulation de test : sans cette réinitialisation, OK_consolante
+        en particulier resterait figé d'un run à l'autre, puisque
+        provisionner_ok_consolante() ne touche pas par défaut
+        (ecraser=False) aux enregistrements déjà renseignés.
+
+        ATTENTION - cette méthode EFFACE des données : à réserver à une
+        base de TEST. Sur une base réelle, cela effacerait notamment
+        OK_consolante, qui est une déclaration du joueur (pas une
+        donnée recalculable), et Est_qualifie, qui peut avoir été
+        corrigé manuellement après un premier calcul.
+
+        - champs : liste des noms de champs à réinitialiser. Par
+          défaut, les 6 champs gérés par cette classe (voir
+          l'__init__). Les champs numériques sont remis à None (case
+          vide), les cases à cocher sont décochées (False).
+
+        Retourne {"maj": n}.
+        """
+        if champs is None:
+            champs = [
+                self.champ_victoires,
+                self.champ_defaites,
+                self.champ_points,
+                self.champ_matchs_joues,
+                self.champ_qualifie,
+                self.champ_ok_consolante,
+            ]
+
+        champs_checkbox = {self.champ_qualifie, self.champ_ok_consolante}
+
+        records = self.table_poule_joueur.all()
+        mises_a_jour = [
+            {
+                "id": r["id"],
+                "fields": {
+                    nom: (False if nom in champs_checkbox else None)
+                    for nom in champs
+                },
+            }
+            for r in records
+        ]
+
+        if mises_a_jour:
+            self.table_poule_joueur.batch_update(mises_a_jour)
+
+        return {"maj": len(mises_a_jour)}
+
     # --- Simulation (round-robin, jeux et matchs non persistés) ---
 
     @staticmethod
