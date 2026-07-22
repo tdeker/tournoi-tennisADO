@@ -235,10 +235,17 @@ def construire_payload_tableau(nom_tournoi):
             res_b = resultat_tour(pos_b, colonne) if pos_b is not None else None
 
             # BYE : une seule des deux places a un joueur -> qualification
-            # d'office (aucun "V" a ecrire pour que ce soit vrai : au 1er
-            # tour, tournoi.py ecrit deja "V" pour les byes ; on le traite
-            # aussi explicitement ici par securite).
-            bye = (nom_a is None) != (nom_b is None)
+            # d'office. Un VRAI bye n'existe QU'AU 1er TOUR (round_index
+            # == 0) : c'est une propriete structurelle du placement
+            # (TableauBracket), ecrite en "V" par tournoi.py des la
+            # creation de Resultat. A partir du 2e tour, une position
+            # sans joueur determine (nom_x is None) signifie seulement
+            # que le match precedent de cette branche n'a PAS ENCORE ete
+            # joue - ce n'est pas un bye, et ne doit surtout pas
+            # declencher une victoire automatique (sinon un joueur passe
+            # par bye au 1er tour se retrouve "vainqueur fantome" de
+            # tous les tours suivants, en cascade jusqu'a la finale).
+            bye = round_index == 0 and (nom_a is None) != (nom_b is None)
             if bye:
                 if nom_a is not None:
                     res_a = "V"
