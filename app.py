@@ -101,34 +101,43 @@ def records_to_joueurs(records) -> list:
         joueurs.append(joueur)
     return joueurs
 
+#################################################
 # =====================================================================
-# TABLEAUX (brackets-viewer) — principal & consolantes
+# TABLEAUX (bracketry) — principal & consolantes
 # ---------------------------------------------------------------------
-# À COLLER dans app.py, juste AVANT la ligne `@app.route('/')`.
-# Réutilise AIRTABLE_TOKEN / BASE_ID déjà définis plus haut dans app.py.
+# A COLLER dans app.py, juste AVANT la ligne `@app.route('/')`.
+# Reutilise AIRTABLE_TOKEN / BASE_ID deja definis plus haut dans app.py.
 #
-# PRINCIPE (important) :
-#   On N'INVENTE RIEN. On affiche l'état EXACT de la table Resultat.
-#   - Chaque ligne Resultat = une position de départ (1..Taille_tableau),
-#     liée à UN joueur fixe, avec les colonnes T_1_32..Finale à "V"/"P".
-#   - Pour chaque tour, on lit la colonne correspondante TELLE QUELLE :
-#       "V" -> ce joueur a gagné ce tour
-#       "P" -> ce joueur a perdu ce tour
-#       vide -> match pas encore joué -> l'emplacement reste vide
-#   - Position sans joueur lié = BYE.
-#   - La taille du tableau (Taille_tableau) fixe le tour de départ :
-#     un tableau de 32 commence au 1/16 ; T_1_32 n'existe pas.
+# REGLES (rappel du cahier des charges) :
+#   - Utilise UNIQUEMENT les tables Tournoi et Resultat.
+#   - Tournoi.Taille_tableau determine le tour de depart :
+#       64 -> 1/32, 32 -> 1/16, 16 -> 1/8, 8 -> 1/4, 4 -> 1/2, 2 -> Finale.
+#   - On affiche l'AVANCEMENT REEL de Resultat, rien n'est simule :
+#       * 1er tour : match k = position (2k-1) vs position (2k).
+#       * une case sans joueur = BYE -> qualification automatique.
+#       * un tour est "termine" seulement quand chaque position encore
+#         en lice a "V" ou "P" ecrit dans la colonne de ce tour.
+#       * tant qu'un match n'a pas de "V" ecrit, l'emplacement du tour
+#         suivant reste VIDE (case blanche), aucun vainqueur invente.
+#   - Pas de scores dans l'affichage (evolution future).
+#   - Seuls les tournois presents dans Resultat sont proposes.
 #
-#   Au fur et à mesure que la table Resultat est remplie, le tableau
-#   progresse tout seul : aucune propagation/déduction côté code.
+# Format de sortie : celui attendu par bracketry (sbachinin/bracketry) :
+#   { "rounds": [{"name": str}, ...],
+#     "matches": [{"roundIndex": int, "order": int, "sides": [Side, ...]}, ...] }
+#   Side = {"title": str, "isWinner": bool} ; une side ABSENTE du tableau
+#   "sides" (longueur 1 au lieu de 2) = BYE, rendue vide par bracketry.
 # =====================================================================
 
-# Colonnes de tour dans Resultat, de la plus large a la finale.
 _COLONNES_TOUR = ["T_1_32", "T_1_16", "T_1_8", "T_1_4", "T_1_2", "Finale"]
-
-# Taille de tableau -> colonne du 1er tour (identique a tournoi.py).
 _PREMIER_TOUR_POUR_TAILLE = {
     64: "T_1_32", 32: "T_1_16", 16: "T_1_8", 8: "T_1_4", 4: "T_1_2", 2: "Finale",
+}
+# Nom de round affiche, dans le vocabulaire tennis (coherent avec les
+# colonnes Resultat elles-memes).
+_NOM_TOUR = {
+    "T_1_32": "1/32", "T_1_16": "1/16", "T_1_8": "1/8",
+    "T_1_4": "1/4", "T_1_2": "1/2", "Finale": "Finale",
 }
 
 
@@ -152,44 +161,27 @@ def _colonnes_actives(taille_tableau):
     return _COLONNES_TOUR[_COLONNES_TOUR.index(premier):]
 
 
-def _positions_du_tour(positions_tour_precedent):
-    """
-    Regroupe les positions par paires : les positions 2k-1 et 2k du tour
-    courant forment le match k. Renvoie la liste des paires (pos_a, pos_b).
-    """
-    paires = []
-    for i in range(0, len(positions_tour_precedent), 2):
-        paires.append(
-            (positions_tour_precedent[i], positions_tour_precedent[i + 1])
-        )
-    return paires
-
-
 def construire_payload_tableau(nom_tournoi):
     """
-    Construit le payload brackets-viewer refletant l'ETAT ACTUEL de la
-    table Resultat pour un tournoi (principal ou consolante). Lecture
-    seule, aucune deduction : un tour non rempli reste vide.
+    Construit le payload bracketry refletant l'ETAT ACTUEL de la table
+    Resultat pour un tournoi (principal ou consolante). Lecture seule,
+    aucune deduction : un tour non rempli reste vide, une position sans
+    joueur est un BYE qualifie d'office.
     """
     table_tournoi, table_resultat, table_joueur = _tables_tableau()
 
     tournois = table_tournoi.all(formula=f"{{Nom}} = '{nom_tournoi}'")
     if not tournois:
         raise ValueError(f"Tournoi '{nom_tournoi}' introuvable.")
-    tournoi = tournois[0]
-    taille = tournoi["fields"].get("Taille_tableau")
+    taille = tournois[0]["fields"].get("Taille_tableau")
     if not taille:
-        raise ValueError(
-            f"Le tournoi '{nom_tournoi}' n'a pas de Taille_tableau."
-        )
+        raise ValueError(f"Le tournoi '{nom_tournoi}' n'a pas de Taille_tableau.")
 
     refs = table_resultat.all(formula=f"{{Tournoi}} = '{nom_tournoi}'")
     if not refs:
-        raise ValueError(
-            f"Aucun Resultat pour '{nom_tournoi}' : tableau non initialise."
-        )
+        raise ValueError(f"Aucun Resultat pour '{nom_tournoi}' : tableau non initialise.")
 
-    # Une ligne Resultat par position -> index par Position.
+    # Une ligne Resultat par position de depart -> index par Position.
     par_position = {}
     for r in refs:
         pos = r["fields"].get("Position")
@@ -210,22 +202,11 @@ def construire_payload_tableau(nom_tournoi):
                 prenom = f.get("Prénom", "")
                 noms_par_id[j["id"]] = f"{prenom} {f.get('Nom', '')}".strip()
 
-    # participant.id = Position de depart (entier stable).
-    participants = []
-    for pos in sorted(par_position):
-        liens = par_position[pos].get("Joueur") or []
+    def nom_joueur(pos):
+        liens = par_position.get(pos, {}).get("Joueur") or []
         if not liens:
-            continue  # bye : aucun participant a cette position
-        participants.append({
-            "id": pos,
-            "tournament_id": 0,
-            "name": noms_par_id.get(liens[0], par_position[pos].get("Ref", f"Pos {pos}")),
-        })
-
-    def joueur_a_position(pos):
-        """id participant (=Position) si un joueur occupe cette place, sinon None (bye)."""
-        f = par_position.get(pos, {})
-        return pos if (f.get("Joueur") or []) else None
+            return None  # BYE : aucun joueur a cette position
+        return noms_par_id.get(liens[0], par_position[pos].get("Ref", f"Pos {pos}"))
 
     def resultat_tour(pos, colonne):
         """'V', 'P' ou None, lu DIRECTEMENT dans Resultat (aucune deduction)."""
@@ -233,86 +214,66 @@ def construire_payload_tableau(nom_tournoi):
 
     colonnes = _colonnes_actives(taille)
 
-    # Positions vivantes du tour courant. Au 1er tour : 1..taille.
-    # Aux tours suivants : la position du joueur marque "V" au tour
-    # precedent (le vainqueur REEL ecrit dans Resultat). Sans "V" (match
-    # pas encore joue), on reserve un emplacement VIDE (None) : l'arbre
-    # reste dessine, l'emplacement se remplira a la saisie.
+    # positions_vivantes[i] = position (int) occupant la ieme place du
+    # tour courant, ou None si ce n'est pas encore determine (le match
+    # precedent n'a pas de "V" ecrit). Au 1er tour : 1..taille.
     positions_vivantes = list(range(1, taille + 1))
 
-    matches, rounds = [], []
-    match_id = 0
+    rounds = [{"name": _NOM_TOUR[c]} for c in colonnes]
+    matches = []
 
-    for round_number, colonne in enumerate(colonnes, start=1):
-        rounds.append({
-            "id": round_number - 1, "number": round_number,
-            "stage_id": 0, "group_id": 0,
-        })
-
+    for round_index, colonne in enumerate(colonnes):
         positions_suivantes = []
-        for numero_match, (pos_a, pos_b) in enumerate(
-            _positions_du_tour(positions_vivantes), start=1
-        ):
-            id_a = joueur_a_position(pos_a) if pos_a is not None else None
-            id_b = joueur_a_position(pos_b) if pos_b is not None else None
+        for ordre, i in enumerate(range(0, len(positions_vivantes), 2)):
+            pos_a = positions_vivantes[i]
+            pos_b = positions_vivantes[i + 1]
+
+            nom_a = nom_joueur(pos_a) if pos_a is not None else None
+            nom_b = nom_joueur(pos_b) if pos_b is not None else None
 
             res_a = resultat_tour(pos_a, colonne) if pos_a is not None else None
             res_b = resultat_tour(pos_b, colonne) if pos_b is not None else None
 
-            # Termine seulement si un "V" est explicitement ecrit.
-            termine = (res_a == "V") or (res_b == "V")
-            status = 4 if termine else 2  # Completed / Ready
+            # BYE : une seule des deux places a un joueur -> qualification
+            # d'office (aucun "V" a ecrire pour que ce soit vrai : au 1er
+            # tour, tournoi.py ecrit deja "V" pour les byes ; on le traite
+            # aussi explicitement ici par securite).
+            bye = (nom_a is None) != (nom_b is None)
+            if bye:
+                if nom_a is not None:
+                    res_a = "V"
+                else:
+                    res_b = "V"
 
-            def opp(pid, position, res):
-                # pid None => bye (opponent = null pour brackets-viewer).
-                if pid is None:
-                    return None
-                o = {"id": pid, "position": position}
-                if res == "V":
-                    o["result"] = "win"
-                elif res == "P":
-                    o["result"] = "loss"
-                return o
+            # sides[0] = position haute (pos_a), sides[1] = position basse
+            # (pos_b), toujours dans cet ordre. Un objet vide {} pour la
+            # place BYE est traite par bracketry comme une case vide
+            # (is_non_empty_object -> false), donc le rendu haut/bas
+            # respecte la position reelle dans le tableau.
+            side_a = {"title": nom_a, "isWinner": res_a == "V"} if nom_a is not None else {}
+            side_b = {"title": nom_b, "isWinner": res_b == "V"} if nom_b is not None else {}
+            sides = [side_a, side_b]
 
             matches.append({
-                "id": match_id, "number": numero_match,
-                "stage_id": 0, "group_id": 0, "round_id": round_number - 1,
-                "child_count": 0, "status": status,
-                "opponent1": opp(id_a, pos_a, res_a),
-                "opponent2": opp(id_b, pos_b, res_b),
+                "roundIndex": round_index,
+                "order": ordre,
+                "sides": sides,
             })
-            match_id += 1
 
-            # Position qui avance : celle du "V" explicite. Aucun "V" =>
-            # emplacement reserve (None), aucun vainqueur invente.
             if res_a == "V":
                 positions_suivantes.append(pos_a)
             elif res_b == "V":
                 positions_suivantes.append(pos_b)
             else:
-                positions_suivantes.append(None)
+                positions_suivantes.append(None)  # pas encore determine
 
         positions_vivantes = positions_suivantes
 
-    return {
-        "participant": participants,
-        "stage": [{
-            "id": 0, "tournament_id": 0, "name": nom_tournoi,
-            "type": "single_elimination", "number": 1,
-            "settings": {"size": taille},
-        }],
-        "group": [{"id": 0, "stage_id": 0, "number": 1}],
-        "round": rounds,
-        "match": matches,
-        "match_game": [],
-    }
+    return {"rounds": rounds, "matches": matches}
 
 
 def _tournois_avec_resultats():
-    """
-    Tournois ayant AU MOINS une ligne dans Resultat (tableau initialise).
-    On ne presente que ceux-la dans le menu du front.
-    """
+    """Tournois ayant AU MOINS une ligne dans Resultat (tableau initialise)."""
     table_tournoi, table_resultat, _ = _tables_tableau()
 
     refs_liees = set()
@@ -347,7 +308,7 @@ def list_tournois():
 
 @app.route('/api/tableau/<path:nom_tournoi>', methods=['GET'])
 def get_tableau(nom_tournoi):
-    """Payload brackets-viewer refletant l'etat actuel de Resultat."""
+    """Payload bracketry refletant l'etat actuel de Resultat."""
     try:
         data = construire_payload_tableau(nom_tournoi)
         return jsonify({"success": True, "data": data})
@@ -357,6 +318,9 @@ def get_tableau(nom_tournoi):
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+################################################
 
 @app.route('/')
 def home():
