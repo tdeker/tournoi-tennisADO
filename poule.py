@@ -313,12 +313,12 @@ class AllocationJoueur:
     """
  
     # Poids des critères
-    W_GEO     = 30   # géographie homogène    (priorité 1)
-    W_NIVEAU  = 20   # niveaux hétérogènes    (priorité 2)
-    W_FAMILLE = 50   # contrainte famille     (priorité 3, quasi-dure)
-    W_AGE     = 40   # âge homogène           (priorité 4)
+    W_GEO     = 30   # géographie homogène    
+    W_NIVEAU  = 20   # niveaux hétérogènes    
+    W_FAMILLE = 50   # contrainte famille     
+    W_AGE     = 40   # âge homogène           
  
-    ECART_AGE_MAX = 10  # écart d'âge normalisateur (en années)
+    ECART_AGE_MAX =   # écart d'âge normalisateur (en années)
  
     def __init__(self, poules: list[Poule], joueurs: list[Joueur]):
         capacite_totale = sum(p.capacite for p in poules)

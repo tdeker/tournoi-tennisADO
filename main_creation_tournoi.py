@@ -34,6 +34,7 @@ prov = ProvisionneurAirtable(
 # pourraient trainer une valeur d'un run precedent avant recalcul.
 resultat_reinit = prov.reinitialiser_poule_joueur()
 print(f"Reinitialisation : {resultat_reinit['maj']} Poule_Joueur remis a vide.")
+exit(0)
 
 # Etape 0 (idempotente) : s'assure que les champs necessaires existent
 # dans Poule_Joueur (Victoires/Defaites/Points/Matchs_joues/Est_qualifie/
