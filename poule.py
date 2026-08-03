@@ -318,7 +318,7 @@ class AllocationJoueur:
     W_FAMILLE = 50   # contrainte famille     
     W_AGE     = 40   # âge homogène           
  
-    ECART_AGE_MAX =   # écart d'âge normalisateur (en années)
+    ECART_AGE_MAX = 10   # écart d'âge normalisateur (en années)
  
     def __init__(self, poules: list[Poule], joueurs: list[Joueur]):
         capacite_totale = sum(p.capacite for p in poules)
