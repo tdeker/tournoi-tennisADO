@@ -361,10 +361,33 @@ class GestionnaireResultat:
                 f"vs {b['joueur']['fields'].get('Nom')} (position {b['position']})."
             )
 
+    def code_vainqueur(self, nom_tournoi):
+        """
+        Retourne le CodeJoueur du vainqueur d'un tableau (celui dont la
+        colonne Finale vaut "V"), ou None si la finale n'a pas encore
+        ete jouee (ou si le tournoi n'a pas de Resultat).
+
+        Sert notamment a recuperer le vainqueur d'une consolante pour
+        l'integrer ensuite au tableau principal (via le parametre
+        codes_repechage_consolante de initialiser_tableau_principal).
+        """
+        refs = self.table_resultat.all(formula=f"{{Tournoi}} = '{nom_tournoi}'")
+        for r in refs:
+            if r["fields"].get("Finale") == "V":
+                liens = r["fields"].get("Joueur") or []
+                if not liens:
+                    return None
+                for j in self.table_joueur.all():
+                    if j["id"] == liens[0]:
+                        return j["fields"].get("CodeJoueur")
+                return None
+        return None
+
     # --- Fonctions métier ---
 
     def initialiser_tableau_principal(
-        self, nom_tournoi, codes_proteges, codes_autres_joueurs, graine=None
+        self, nom_tournoi, codes_proteges, codes_autres_joueurs,
+        codes_repechage_consolante=None, graine=None
     ):
         """
         Initialise la table Resultat pour le TABLEAU PRINCIPAL.
@@ -377,12 +400,27 @@ class GestionnaireResultat:
           occupe le rang 1, le 2e le rang 2, etc. : les deux premiers
           ne peuvent se rencontrer qu'en finale, les quatre premiers
           qu'en demi-finale, et ainsi de suite.
-        - codes_autres_joueurs : les autres joueurs sélectionnés,
-          placés au HASARD dans les positions restantes (pratique
-          standard de tirage au sort en tournoi).
+        - codes_autres_joueurs : les autres joueurs sélectionnés
+          (typiquement les qualifiés de poule), placés au HASARD dans
+          les positions restantes (pratique standard de tirage au
+          sort en tournoi).
+        - codes_repechage_consolante : optionnel. Vainqueur(s) d'une
+          consolante, repêché(s) dans le tableau principal (le
+          principal se joue APRÈS les consolantes). Placés au hasard
+          comme codes_autres_joueurs, mais avec Origine="Consolante"
+          dans Resultat plutôt que "Poule", pour garder la trace de
+          leur parcours. Voir GestionnaireResultat.code_vainqueur pour
+          récupérer ce code une fois une consolante terminée.
         - graine : optionnel. Si fourni (ex: graine=42), le tirage au
           sort ET la réparation familiale sont reproductibles d'une
           exécution à l'autre ; sinon ils diffèrent à chaque fois.
+
+        Taille_tableau n'est PAS lue comme une entrée ici (comme pour
+        la consolante) - c'est une donnée de SORTIE, calculée
+        automatiquement (prochaine puissance de 2 au-dessus du nombre
+        total de joueurs : protégés + autres + repêchés de consolante)
+        puis ÉCRITE dans le Tournoi Airtable. Une valeur qui y
+        traînerait serait ignorée puis écrasée par la valeur calculée.
 
         Deux garanties supplémentaires :
         - Les byes tombent automatiquement face aux protégés, dans
@@ -393,24 +431,40 @@ class GestionnaireResultat:
           conflit est insoluble, un warning est émis et le placement
           est conservé tel quel.
         """
-        tournoi = self._recuperer_tournoi(nom_tournoi)
-        taille_tableau = tournoi["fields"]["Taille_tableau"]
+        codes_repechage_consolante = codes_repechage_consolante or []
 
-        doublons = set(codes_proteges) & set(codes_autres_joueurs)
-        if doublons:
-            raise ValueError(
-                f"Joueurs présents dans les deux listes : {sorted(doublons)}"
-            )
+        tournoi = self._recuperer_tournoi(nom_tournoi)
+
+        groupes = {
+            "codes_proteges": set(codes_proteges),
+            "codes_autres_joueurs": set(codes_autres_joueurs),
+            "codes_repechage_consolante": set(codes_repechage_consolante),
+        }
+        noms_groupes = list(groupes)
+        for i in range(len(noms_groupes)):
+            for j in range(i + 1, len(noms_groupes)):
+                nom_a, nom_b = noms_groupes[i], noms_groupes[j]
+                doublons = groupes[nom_a] & groupes[nom_b]
+                if doublons:
+                    raise ValueError(
+                        f"Joueurs présents dans {nom_a} ET {nom_b} : {sorted(doublons)}"
+                    )
 
         proteges = self._recuperer_joueurs_par_codes(codes_proteges)
         autres = self._recuperer_joueurs_par_codes(codes_autres_joueurs)
+        repechages = self._recuperer_joueurs_par_codes(codes_repechage_consolante)
 
         rng = random.Random(graine)
-        rng.shuffle(autres)
+        autres_et_repechages = autres + repechages
+        rng.shuffle(autres_et_repechages)
 
-        joueurs_ordonnes = proteges + autres
-        bracket = TableauBracket(joueurs_ordonnes, taille_tableau)
+        joueurs_ordonnes = proteges + autres_et_repechages
+        bracket = TableauBracket(joueurs_ordonnes, taille_tableau=None)  # toujours calculé
         positions = bracket.calculer_positions()
+
+        # Taille_tableau est une SORTIE : on l'écrit dans Airtable une
+        # fois calculée, jamais lue comme entrée pour ce tournoi.
+        self.table_tournoi.update(tournoi["id"], {"Taille_tableau": bracket.taille_tableau})
 
         # Réparation familiale : seuls les non-protégés qui ne sont
         # pas face à un bye peuvent être déplacés.
@@ -420,9 +474,17 @@ class GestionnaireResultat:
 
         # Origine conforme au schéma ("Seed, Poule, Consolante") :
         # "Seed" pour les têtes de série officielles (champ Seed=True
-        # sur Joueur), "Poule" pour les qualifiés issus des poules.
+        # sur Joueur), "Consolante" pour les repêchés (issus de
+        # codes_repechage_consolante), "Poule" pour les autres
+        # qualifiés issus des poules.
+        ids_repechages = {j["id"] for j in repechages}
+
         def origine_joueur(joueur):
-            return "Seed" if joueur["fields"].get("Seed") else "Poule"
+            if joueur["fields"].get("Seed"):
+                return "Seed"
+            if joueur["id"] in ids_repechages:
+                return "Consolante"
+            return "Poule"
 
         return self._ecrire_resultats(positions, tournoi, origine_joueur)
 
@@ -438,16 +500,13 @@ class GestionnaireResultat:
         - graine : optionnel, pour une réparation familiale
           reproductible.
 
-        IMPORTANT : contrairement au principal, Taille_tableau n'est
-        PAS lu comme une entrée ici - c'est une donnée de SORTIE,
-        calculée automatiquement (prochaine puissance de 2 au-dessus
-        du nombre de joueurs à consoler) puis ÉCRITE dans le Tournoi
-        Airtable. La taille de la consolante dépend du nombre de
-        perdants, pas d'une décision d'organisateur fixée à l'avance
-        (contrairement au principal) : elle n'a donc pas à être
-        pré-remplie dans Airtable, et une valeur qui y traînerait
-        serait de toute façon ignorée puis écrasée par la valeur
-        calculée.
+        IMPORTANT : comme pour le principal (voir
+        initialiser_tableau_principal), Taille_tableau n'est PAS lu
+        comme une entrée ici - c'est une donnée de SORTIE, calculée
+        automatiquement (prochaine puissance de 2 au-dessus du nombre
+        de joueurs à consoler) puis ÉCRITE dans le Tournoi Airtable.
+        Une valeur qui y traînerait serait de toute façon ignorée puis
+        écrasée par la valeur calculée.
 
         Le tri se fait automatiquement par NOMBRE DE POINTS (champ
         Points de Poule_Joueur), du plus élevé au plus faible : ce
@@ -551,3 +610,133 @@ class GestionnaireResultat:
                 nouveaux_records.append(champs)
 
         return self.table_resultat.batch_create(nouveaux_records)
+
+    def reinitialiser_resultat(self, nom_tournoi):
+        """
+        Supprime TOUS les enregistrements Resultat d'un tournoi (principal
+        ou consolante), pour repartir d'un tableau vide avant une nouvelle
+        creation.
+
+        Sans cette RAZ, appeler initialiser_tableau_principal ou
+        remplir_consolante plusieurs fois de suite pour le meme tournoi
+        ACCUMULE des enregistrements Resultat au lieu de les remplacer
+        (_ecrire_resultats fait toujours un batch_create, jamais un
+        nettoyage prealable) : d'anciennes lignes d'un run precedent
+        restent presentes a cote des nouvelles, ce qui peut notamment
+        faire apparaitre PLUSIEURS "V" en Finale (un ancien resultat
+        perime a cote du nouveau, pour deux simulations differentes).
+
+        ATTENTION - cette methode EFFACE des donnees : a appeler
+        uniquement avant de recreer le tableau du meme tournoi (test ou
+        reinitialisation volontaire), jamais en cours de tournoi reel.
+
+        Retourne {"supprimes": n}.
+        """
+        self._recuperer_tournoi(nom_tournoi)  # verifie que le Tournoi existe
+        refs = self.table_resultat.all(formula=f"{{Tournoi}} = '{nom_tournoi}'")
+        ids = [r["id"] for r in refs]
+        if ids:
+            self.table_resultat.batch_delete(ids)
+        return {"supprimes": len(ids)}
+
+    # Ordre complet des colonnes de tour, de la plus large a la finale.
+    # (meme convention que _COLONNES_PREMIER_TOUR, utilisee aussi par
+    # tableau_bracketry.py cote lecture/affichage.)
+    _COLONNES_TOUR = ["T_1_32", "T_1_16", "T_1_8", "T_1_4", "T_1_2", "Finale"]
+
+    @classmethod
+    def _colonnes_actives(cls, taille_tableau):
+        """Colonnes de tour utilisees, du 1er tour a la finale, selon la taille."""
+        premier = cls._colonne_premier_tour(taille_tableau)
+        return cls._COLONNES_TOUR[cls._COLONNES_TOUR.index(premier):]
+
+    def simuler_tableau_jusqua_la_finale(self, nom_tournoi, graine=None):
+        """
+        Simule ALEATOIREMENT tous les matchs restants d'un tableau deja
+        initialise (par initialiser_tableau_principal ou
+        remplir_consolante) - principal comme consolante, la logique
+        est identique puisqu'elle ne travaille que sur Resultat/Tournoi
+        - et ecrit les "V"/"P" jusqu'a la Finale.
+
+        Ne simule QUE les vrais matchs (deux joueurs presents, colonne
+        du tour encore vide). Les BYE du 1er tour sont deja tranches a
+        la creation du tableau (colonne du 1er tour = "V" pour le
+        joueur exempte) et ne sont pas retouches : on suit simplement
+        le fil du gagnant deja connu pour l'avancer au tour suivant.
+
+        - nom_tournoi : Nom (PK) du Tournoi, deja initialise (Resultat
+          non vide pour ce tournoi).
+        - graine : optionnel. Si fourni, le tirage des vainqueurs est
+          reproductible d'une execution a l'autre.
+
+        Retourne {"maj": n} (nombre de lignes Resultat mises a jour).
+        """
+        tournoi = self._recuperer_tournoi(nom_tournoi)
+        taille_tableau = tournoi["fields"]["Taille_tableau"]
+        if not taille_tableau:
+            raise ValueError(
+                f"Le tournoi '{nom_tournoi}' n'a pas de Taille_tableau : "
+                f"le tableau n'a pas encore ete initialise."
+            )
+        colonnes = self._colonnes_actives(taille_tableau)
+
+        refs = self.table_resultat.all(formula=f"{{Tournoi}} = '{nom_tournoi}'")
+        if not refs:
+            raise ValueError(
+                f"Aucun Resultat pour '{nom_tournoi}' : le tableau n'a pas "
+                f"encore ete initialise (appelle d'abord "
+                f"initialiser_tableau_principal ou remplir_consolante)."
+            )
+
+        par_position = {}
+        id_par_position = {}
+        for r in refs:
+            pos = r["fields"].get("Position")
+            if pos is not None:
+                par_position[pos] = dict(r["fields"])  # copie modifiable
+                id_par_position[pos] = r["id"]
+
+        rng = random.Random(graine)
+        positions_vivantes = list(range(1, taille_tableau + 1))
+        mises_a_jour = {}  # position -> {colonne: "V"/"P", ...}
+
+        for colonne in colonnes:
+            positions_suivantes = []
+            for i in range(0, len(positions_vivantes), 2):
+                pos_a, pos_b = positions_vivantes[i], positions_vivantes[i + 1]
+
+                # Un BYE (uniquement possible au 1er tour) a deja son "V"
+                # ecrit par _ecrire_resultats : on ne simule rien, on
+                # suit juste le fil du gagnant deja connu.
+                deja_gagnant = None
+                if par_position.get(pos_a, {}).get(colonne) == "V":
+                    deja_gagnant = pos_a
+                elif par_position.get(pos_b, {}).get(colonne) == "V":
+                    deja_gagnant = pos_b
+
+                if deja_gagnant is not None:
+                    positions_suivantes.append(deja_gagnant)
+                    continue
+
+                # Vrai match : tirage aleatoire du vainqueur.
+                gagnant, perdant = (pos_a, pos_b) if rng.random() < 0.5 else (pos_b, pos_a)
+
+                mises_a_jour.setdefault(gagnant, {})[colonne] = "V"
+                mises_a_jour.setdefault(perdant, {})[colonne] = "P"
+                # Reporte immediatement dans par_position pour que le tour
+                # suivant sache que cette case est desormais tranchee.
+                par_position.setdefault(gagnant, {})[colonne] = "V"
+                par_position.setdefault(perdant, {})[colonne] = "P"
+
+                positions_suivantes.append(gagnant)
+
+            positions_vivantes = positions_suivantes
+
+        updates = [
+            {"id": id_par_position[pos], "fields": champs}
+            for pos, champs in mises_a_jour.items()
+        ]
+        if updates:
+            self.table_resultat.batch_update(updates)
+
+        return {"maj": len(updates)}

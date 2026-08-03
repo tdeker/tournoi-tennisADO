@@ -52,7 +52,7 @@ NOMS_POULES_LEGENDES_HOMMES = [
 ]
 NOMS_POULES_LEGENDES_FEMMES = [
      # Superstars mondiales incontournables
-    "WilliamsS", "WilliamsV", "Graf", "Navratilova", "Evert", "Sharapova",
+    "Serena Williams", "Venus Williams", "Graf", "Navratilova", "Evert", "Sharapova",
     "Hingis", "Seles", "Henin", "Clijsters", "Mauresmo", "Swiatek", "Sabalenka",
     "Osaka", "Gauff",
     # Stars françaises (très connues en France)
